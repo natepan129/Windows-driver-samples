@@ -13,7 +13,12 @@ CatalogFile=IddSampleDriver.cat
 DriverVer= ; TODO: set DriverVer in stampinf property pages
 
 [Manufacturer]
-%ManufacturerName%=Standard,NT$ARCH$.10.0...22000
+%ManufacturerName%=Standard, NT$ARCH$.10.0...19041, NT$ARCH$.10.0...22000
+
+[Standard.NT$ARCH$.10.0...19041]
+%DeviceName% = MyDevice_Install_Win10, Root\IddSampleDriver ; TODO: edit hw-id
+%DeviceName%=MyDevice_Install_Win10, IddSampleDriver      ; TODO: edit hw-id, this hardware if is used by the IddSampleApp.exe
+
 
 [Standard.NT$ARCH$.10.0...22000]
 %DeviceName%=MyDevice_Install, Root\IddSampleDriver ; TODO: edit hw-id, this hardware id is used by Visual Studio remote debugging
@@ -27,10 +32,20 @@ IddSampleDriver.dll=1
 
 ; =================== UMDF Device ==================================
 
+;---------------- copy files
+
+[MyDevice_Install_Win10.NT]
+CopyFiles=UMDriverCopy
+AddReg = MyDevice_HardwareDeviceSettings
+
+
 [MyDevice_Install.NT]
 Include=WUDFRD.inf
 Needs=WUDFRD.NT
 CopyFiles=UMDriverCopy
+
+[MyDevice_Install_Win10.NT.hw]
+AddReg = MyDevice_HardwareDeviceSettings
 
 [MyDevice_Install.NT.hw]
 Include=WUDFRD.inf
@@ -41,9 +56,36 @@ AddReg = MyDevice_HardwareDeviceSettings
 HKR,, "UpperFilters",  %REG_MULTI_SZ%, "IndirectKmd"
 HKR, "WUDF", "DeviceGroupId", %REG_SZ%, "IddSampleDriverGroup" ; TODO: edit driver group name, see README.md for more info
 
+
+;-------------- Service installation
+[MyDevice_Install_Win10.NT.Services]
+AddService=WUDFRd,0x000001fa,WUDFRD_ServiceInstall
+AddService=IndirectKmd,,IndirectKmd_ServiceInstall
+
+[WUDFRD_ServiceInstall]
+DisplayName = %WudfRdDisplayName%
+ServiceType = 1
+StartType = 3
+ErrorControl = 1
+ServiceBinary = %12%\WUDFRd.sys
+
+[IndirectKmd_ServiceInstall]
+DisplayName = %IndirectKmd.DisplayName%
+ServiceType = 1 ; SERVICE_KERNEL_DRIVER
+StartType = 3 ; SERVICE_DEMAND_START
+ErrorControl = 1 ; SERVICE_ERROR_NORMAL
+ServiceBinary = %13%\IndirectKmd.sys ; (NTamd64.10.0...19041) Service binary 'IndirectKmd.sys' must point to a path under DIRID %13%.
+
+
 [MyDevice_Install.NT.Services]
 Include=WUDFRD.inf
 Needs=WUDFRD.NT.Services
+
+;-------------- WDF specific section -------------
+[MyDevice_Install_Win10.NT.Wdf]
+UmdfService=IddSampleDriver,IddSampleDriver_Install
+UmdfServiceOrder=IddSampleDriver
+UmdfKernelModeClientPolicy = AllowKernelModeClients
 
 [MyDevice_Install.NT.Wdf]
 UmdfService=IddSampleDriver,IddSampleDriver_Install
@@ -64,9 +106,12 @@ IddSampleDriver.dll
 ; =================== Generic ==================================
 
 [Strings]
-ManufacturerName="<Your manufacturer name>" ; TODO: Replace with your manufacturer name
+ManufacturerName="Test Owl3D" ; TODO: Replace with your manufacturer name
 DiskName = "IddSampleDriver Installation Disk" ; TODO: Replace with driver disk name
 DeviceName="IddSampleDriver Device" ; TODO: Replace with correct device name
+
+WudfRdDisplayName="Windows Driver Foundation - User-mode Driver Framework Reflector"
+IndirectKmd.DisplayName="IndirectKmd Driver"
 
 REG_MULTI_SZ  = 0x00010000
 REG_SZ        = 0x00000000
