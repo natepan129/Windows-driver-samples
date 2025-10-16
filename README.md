@@ -1,6 +1,6 @@
 # Windows Driver Samples for Windows 11 (Fork)
 
-This repository is a fork of Microsoft/Windows-driver-samples.
+This repository is a fork of [Microsoft/Windows-driver-samples](https://github.com/microsoft/Windows-driver-samples).
 
 It is intended for testing and learning purposes related to Windows 11 driver development.
 
@@ -30,11 +30,11 @@ Device types such as USB, Bluetooth, Camera, Display, NFC, and WLAN
 
 Useful Microsoft documentation:
 
-Windows Driver Kit (WDK) documentation
+[Windows Driver Kit (WDK) documentation](https://learn.microsoft.com/windows-hardware/drivers/)
 
-Windows Driver Frameworks (WDF) guide
+[Windows Driver Frameworks (WDF) guide](https://learn.microsoft.com/windows-hardware/drivers/wdf/)
 
-From Sample Code to Production Driver
+[From Sample Code to Production Driver](https://learn.microsoft.com/windows-hardware/drivers/develop/from-sample-code-to-production-driver)
 
 # Development Setup
 
