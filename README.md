@@ -49,7 +49,7 @@ Open a sample project in Visual Studio
 Build and deploy the driver to a test environment
 
 Official setup guide:
-Download the WDK, WinDbg, and associated tools
+[Download the WDK, WinDbg, and associated tools](https://learn.microsoft.com/windows-hardware/drivers/download-the-wdk)
 
 # License
 
