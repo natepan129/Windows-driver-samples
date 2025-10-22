@@ -1,0 +1,158 @@
+{
+  "test_configuration": {
+    "name": "VDD SDK Test Suite",
+    "version": "1.0.0",
+    "description": "Virtual Display Driver SDK 測試配置",
+    
+    "test_categories": {
+      "unit_tests": {
+        "enabled": true,
+        "timeout_seconds": 30,
+        "parallel_execution": true,
+        "mock_services": true
+      },
+      "integration_tests": {
+        "enabled": true,
+        "timeout_seconds": 60,
+        "parallel_execution": false,
+        "require_driver": false,
+        "cleanup_on_failure": true
+      },
+      "performance_tests": {
+        "enabled": true,
+        "timeout_seconds": 120,
+        "iterations": 100,
+        "measure_memory": true,
+        "measure_cpu": true
+      }
+    },
+    
+    "test_environment": {
+      "log_level": "debug",
+      "log_file": "C:\\temp\\vdd_test.log",
+      "test_data_dir": "C:\\temp\\vdd_test_data",
+      "cleanup_after_tests": true,
+      "create_test_displays": true,
+      "max_test_displays": 5
+    },
+    
+    "driver_requirements": {
+      "require_installation": false,
+      "auto_install": false,
+      "test_inf_path": "C:\\Driver\\VDD.inf",
+      "admin_privileges": false
+    },
+    
+    "test_scenarios": {
+      "basic_functionality": {
+        "enabled": true,
+        "description": "基本功能測試",
+        "test_cases": [
+          "initialize_shutdown",
+          "version_info",
+          "system_info"
+        ]
+      },
+      "display_management": {
+        "enabled": true,
+        "description": "顯示器管理測試",
+        "test_cases": [
+          "activate_deactivate",
+          "set_mode",
+          "set_location",
+          "set_primary",
+          "enumerate_adapters",
+          "enumerate_modes"
+        ]
+      },
+      "session_management": {
+        "enabled": true,
+        "description": "會話管理測試",
+        "test_cases": [
+          "begin_end_session",
+          "heartbeat_mechanism",
+          "lease_management",
+          "session_timeout"
+        ]
+      },
+      "advanced_features": {
+        "enabled": true,
+        "description": "高級功能測試",
+        "test_cases": [
+          "hdr_support",
+          "stereo_support",
+          "custom_edid",
+          "multiple_displays"
+        ]
+      },
+      "error_handling": {
+        "enabled": true,
+        "description": "錯誤處理測試",
+        "test_cases": [
+          "invalid_parameters",
+          "concurrent_access",
+          "memory_allocation",
+          "service_unavailable"
+        ]
+      },
+      "recovery": {
+        "enabled": true,
+        "description": "恢復功能測試",
+        "test_cases": [
+          "orphaned_state_recovery",
+          "driver_restart",
+          "service_recovery"
+        ]
+      }
+    },
+    
+    "performance_benchmarks": {
+      "display_creation": {
+        "target_operations_per_second": 10,
+        "max_latency_ms": 1000,
+        "memory_usage_mb": 50
+      },
+      "session_management": {
+        "heartbeat_interval_ms": 1000,
+        "lease_timeout_ms": 30000,
+        "max_concurrent_sessions": 10
+      },
+      "display_configuration": {
+        "mode_change_latency_ms": 500,
+        "location_change_latency_ms": 200,
+        "primary_change_latency_ms": 300
+      }
+    },
+    
+    "test_data": {
+      "display_modes": [
+        { "width": 1920, "height": 1080, "refresh": 60 },
+        { "width": 2560, "height": 1440, "refresh": 90 },
+        { "width": 3840, "height": 2160, "refresh": 60 },
+        { "width": 1920, "height": 1080, "refresh": 120 }
+      ],
+      "display_locations": [
+        { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+        { "x": 1920, "y": 0, "width": 1920, "height": 1080 },
+        { "x": 0, "y": 1080, "width": 1920, "height": 1080 },
+        { "x": 1920, "y": 1080, "width": 1920, "height": 1080 }
+      ],
+      "test_names": [
+        "Test Display 1",
+        "Test Display 2",
+        "Test Display 3",
+        "Test Display 4",
+        "Test Display 5"
+      ]
+    },
+    
+    "reporting": {
+      "generate_html_report": true,
+      "generate_xml_report": true,
+      "generate_json_report": true,
+      "include_screenshots": false,
+      "include_performance_metrics": true,
+      "report_output_dir": "C:\\temp\\vdd_test_reports"
+    }
+  }
+}

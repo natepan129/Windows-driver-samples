@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "Trace.h"
+#include "vddsdk.h"  // VDD SDK support
 
 namespace Microsoft
 {
@@ -99,10 +100,21 @@ namespace Microsoft
 
             void InitAdapter();
             void FinishInit(UINT ConnectorIndex);
+            
+            // VDD SDK methods
+            NTSTATUS InitializeVddSdk();
+            void ShutdownVddSdk();
+            NTSTATUS CreateVirtualDisplays();
+            NTSTATUS UpdateDisplayConfiguration();
 
         protected:
             WDFDEVICE m_WdfDevice;
             IDDCX_ADAPTER m_Adapter;
+            
+            // VDD SDK support
+            std::unique_ptr<vdd::VddSdkImpl> m_vddSdk;
+            std::vector<vdd::VirtualDisplayDesc> m_activeDisplays;
+            bool m_vddSdkInitialized;
         };
 
         class IndirectMonitorContext

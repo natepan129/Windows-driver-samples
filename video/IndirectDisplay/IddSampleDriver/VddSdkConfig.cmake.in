@@ -1,0 +1,23 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find required dependencies
+find_dependency(D3D11 REQUIRED)
+find_dependency(DXGI REQUIRED)
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/VddSdkTargets.cmake")
+
+# Set variables for compatibility
+set(VddSdk_VERSION @PROJECT_VERSION@)
+set(VddSdk_FOUND TRUE)
+
+# Provide convenience variables
+set(VddSdk_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/../include)
+set(VddSdk_LIBRARIES VddSdk::vddsdk)
+set(VddSdk_STATIC_LIBRARIES VddSdk::vddsdk_static)
+
+# Check if components are requested
+include(CMakePackageConfigHelpers)
+check_required_components(VddSdk)
