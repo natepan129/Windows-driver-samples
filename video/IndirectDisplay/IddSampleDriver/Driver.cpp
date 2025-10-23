@@ -24,7 +24,8 @@ using namespace Microsoft::WRL;
 
 #pragma region SampleMonitors
 
-static constexpr DWORD IDD_SAMPLE_MONITOR_COUNT = 3; // If monitor count > ARRAYSIZE(s_SampleMonitors), we create edid-less monitors
+// Configurable monitor count - can be modified at runtime
+static DWORD IDD_SAMPLE_MONITOR_COUNT = 1; // Default to 1 monitor, can be increased dynamically
 
 // Default modes reported for edid-less monitors. The first mode is set as preferred
 static const struct IndirectSampleMonitor::SampleMonitorMode s_SampleDefaultModes[] = 
@@ -34,8 +35,8 @@ static const struct IndirectSampleMonitor::SampleMonitorMode s_SampleDefaultMode
     { 1024,  768, 75 },
 };
 
-// FOR SAMPLE PURPOSES ONLY, Static info about monitors that will be reported to OS
-static const struct IndirectSampleMonitor s_SampleMonitors[] =
+// Dynamic monitor configuration - can be modified at runtime
+static struct IndirectSampleMonitor s_SampleMonitors[10] = // Support up to 10 monitors
 {
     // Modified EDID from Dell S2719DGF
     {
@@ -72,8 +73,67 @@ static const struct IndirectSampleMonitor s_SampleMonitors[] =
             { 1024,  768,  60 },
         },
         0
-    }
+    },
+    // Additional monitors can be added dynamically
+    {0}, {0}, {0}, {0}, {0}, {0}, {0}, {0} // Initialize remaining slots as empty
 };
+
+#pragma endregion
+
+#pragma region Configuration Functions
+
+// Configuration functions for runtime VDD management
+static void ConfigureVirtualDisplay(DWORD MonitorIndex, const char* Name, DWORD Width, DWORD Height, DWORD RefreshRate)
+{
+    if (MonitorIndex >= 10) return; // Max 10 monitors
+    
+    // Create a simple EDID for the virtual display
+    BYTE edid[128] = {0};
+    // Basic EDID header
+    edid[0] = 0x00; edid[1] = 0xFF; edid[2] = 0xFF; edid[3] = 0xFF;
+    edid[4] = 0xFF; edid[5] = 0xFF; edid[6] = 0xFF; edid[7] = 0x00;
+    // Manufacturer ID (example)
+    edid[8] = 0x10; edid[9] = 0xAC;
+    // Product code
+    edid[10] = 0xE6; edid[11] = 0xD0;
+    // Serial number
+    edid[12] = 0x55; edid[13] = 0x5A; edid[14] = 0x4A; edid[15] = 0x30;
+    // Week/Year
+    edid[16] = 0x24; edid[17] = 0x1D;
+    // EDID version
+    edid[18] = 0x01; edid[19] = 0x04;
+    
+    // Basic display parameters
+    edid[20] = 0xA5; edid[21] = 0x3C; edid[22] = 0x22; edid[23] = 0x78;
+    edid[24] = 0xFB; edid[25] = 0x6C; edid[26] = 0xE5; edid[27] = 0xA5;
+    edid[28] = 0x55; edid[29] = 0x50; edid[30] = 0xA0; edid[31] = 0x23;
+    edid[32] = 0x0B; edid[33] = 0x50; edid[34] = 0x54;
+    
+    // Fill the rest with zeros for now
+    for (int i = 35; i < 128; i++) {
+        edid[i] = 0x00;
+    }
+    
+    // Configure the monitor structure
+    s_SampleMonitors[MonitorIndex] = {
+        {0}, // EDID will be filled
+        {
+            { Width, Height, RefreshRate },
+            { 1920, 1080, 60 },
+            { 1024, 768, 60 }
+        },
+        0 // Preferred mode index
+    };
+    
+    // Copy EDID
+    memcpy((void*)s_SampleMonitors[MonitorIndex].pEdidBlock, edid, 128);
+}
+
+static void SetMonitorCount(DWORD Count)
+{
+    if (Count > 10) Count = 10; // Max 10 monitors
+    IDD_SAMPLE_MONITOR_COUNT = Count;
+}
 
 #pragma endregion
 
@@ -135,6 +195,10 @@ EVT_IDD_CX_MONITOR_QUERY_TARGET_MODES IddSampleMonitorQueryModes;
 
 EVT_IDD_CX_MONITOR_ASSIGN_SWAPCHAIN IddSampleMonitorAssignSwapChain;
 EVT_IDD_CX_MONITOR_UNASSIGN_SWAPCHAIN IddSampleMonitorUnassignSwapChain;
+
+EVT_WDF_DEVICE_FILE_CREATE IddSampleDeviceFileCreate;
+EVT_WDF_FILE_CLOSE IddSampleFileClose;
+EVT_WDF_DEVICE_IO_CONTROL IddSampleIoDeviceControl;
 
 struct IndirectDeviceContextWrapper
 {
@@ -216,9 +280,8 @@ NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
     IDD_CX_CLIENT_CONFIG IddConfig;
     IDD_CX_CLIENT_CONFIG_INIT(&IddConfig);
 
-    // If the driver wishes to handle custom IoDeviceControl requests, it's necessary to use this callback since IddCx
-    // redirects IoDeviceControl requests to an internal queue. This sample does not need this.
-    // IddConfig.EvtIddCxDeviceIoControl = IddSampleIoDeviceControl;
+    // Enable custom IoDeviceControl for runtime configuration
+    IddConfig.EvtIddCxDeviceIoControl = IddSampleIoDeviceControl;
 
     IddConfig.EvtIddCxAdapterInitFinished = IddSampleAdapterInitFinished;
 
@@ -804,6 +867,105 @@ NTSTATUS IddSampleMonitorUnassignSwapChain(IDDCX_MONITOR MonitorObject)
     auto* pMonitorContextWrapper = WdfObjectGet_IndirectMonitorContextWrapper(MonitorObject);
     pMonitorContextWrapper->pContext->UnassignSwapChain();
     return STATUS_SUCCESS;
+}
+
+#pragma endregion
+
+#pragma region IOCTL Handlers
+
+// IOCTL codes for runtime configuration
+#define IOCTL_VDD_CONFIGURE_DISPLAY CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_VDD_SET_MONITOR_COUNT CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+// Configuration structures
+struct VddDisplayConfig {
+    DWORD MonitorIndex;
+    DWORD Width;
+    DWORD Height;
+    DWORD RefreshRate;
+    char Name[64];
+};
+
+struct VddMonitorCount {
+    DWORD Count;
+};
+
+_Use_decl_annotations_
+NTSTATUS IddSampleDeviceFileCreate(WDFDEVICE Device, WDFREQUEST Request, WDFFILEOBJECT FileObject)
+{
+    UNREFERENCED_PARAMETER(Device);
+    UNREFERENCED_PARAMETER(Request);
+    UNREFERENCED_PARAMETER(FileObject);
+    
+    // Allow any application to open the device for configuration
+    return STATUS_SUCCESS;
+}
+
+_Use_decl_annotations_
+VOID IddSampleFileClose(WDFFILEOBJECT FileObject)
+{
+    UNREFERENCED_PARAMETER(FileObject);
+    
+    // Cleanup when file is closed
+}
+
+_Use_decl_annotations_
+NTSTATUS IddSampleIoDeviceControl(WDFDEVICE Device, WDFREQUEST Request, size_t OutputBufferLength, size_t InputBufferLength, ULONG IoControlCode)
+{
+    UNREFERENCED_PARAMETER(Device);
+    UNREFERENCED_PARAMETER(OutputBufferLength);
+    
+    NTSTATUS Status = STATUS_SUCCESS;
+    
+    switch (IoControlCode)
+    {
+    case IOCTL_VDD_CONFIGURE_DISPLAY:
+    {
+        if (InputBufferLength < sizeof(VddDisplayConfig))
+        {
+            Status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+        
+        VddDisplayConfig* pConfig = nullptr;
+        Status = WdfRequestRetrieveInputBuffer(Request, sizeof(VddDisplayConfig), (PVOID*)&pConfig, nullptr);
+        if (!NT_SUCCESS(Status))
+        {
+            break;
+        }
+        
+        // Configure the virtual display
+        ConfigureVirtualDisplay(pConfig->MonitorIndex, pConfig->Name, pConfig->Width, pConfig->Height, pConfig->RefreshRate);
+        break;
+    }
+    
+    case IOCTL_VDD_SET_MONITOR_COUNT:
+    {
+        if (InputBufferLength < sizeof(VddMonitorCount))
+        {
+            Status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+        
+        VddMonitorCount* pCount = nullptr;
+        Status = WdfRequestRetrieveInputBuffer(Request, sizeof(VddMonitorCount), (PVOID*)&pCount, nullptr);
+        if (!NT_SUCCESS(Status))
+        {
+            break;
+        }
+        
+        // Set the monitor count
+        SetMonitorCount(pCount->Count);
+        break;
+    }
+    
+    default:
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+        break;
+    }
+    
+    WdfRequestComplete(Request, Status);
+    return Status;
 }
 
 #pragma endregion
