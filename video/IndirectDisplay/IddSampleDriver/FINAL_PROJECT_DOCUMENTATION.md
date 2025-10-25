@@ -17,13 +17,15 @@ This document provides a comprehensive overview of the VDD (Virtual Display Driv
 ### Core Components
 
 #### 1. **VDD SDK Library** (`vddsdk.h`, `vddsdk.cpp`)
-- **Purpose**: High-level API for virtual display management
+- **Purpose**: High-level API for virtual display management with real Windows API integration
 - **Features**: 
-  - Display activation/deactivation
-  - Mode configuration (resolution, refresh rate)
-  - Position management
-  - Primary display control
-  - Error handling and status reporting
+  - Display activation/deactivation using Windows display APIs
+  - Mode configuration (resolution, refresh rate) via ChangeDisplaySettings
+  - Position management using SetDisplayConfig
+  - Primary display control with Windows display configuration
+  - Driver management using SetupAPI
+  - Registry-based system information gathering
+  - Real-time system adapter enumeration
 
 #### 2. **Windows Driver Integration** (`Driver.cpp`, `Driver.h`)
 - **Framework**: UMDF (User-Mode Driver Framework)

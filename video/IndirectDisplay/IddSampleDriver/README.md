@@ -1,20 +1,21 @@
 # VDD (Virtual Display Driver) SDK
 
-A comprehensive C++ SDK for managing virtual display drivers on Windows, built with Test-Driven Development (TDD) methodology.
+A comprehensive C++ SDK for managing virtual display drivers on Windows, built with Test-Driven Development (TDD) methodology. **Now featuring real Windows API implementations for production use.**
 
 ## 🚀 Features
 
 ### Core Functionality
-- **Dynamic Virtual Display Creation** - Create and manage virtual displays programmatically
-- **Display Configuration Management** - Set modes, positions, and primary display settings
-- **Session Management** - Fault-tolerant session handling with heartbeat mechanism
-- **Real-time Updates** - Live configuration changes without system restart
+- **Dynamic Virtual Display Creation** - Create and manage virtual displays programmatically using real Windows APIs
+- **Display Configuration Management** - Set modes, positions, and primary display settings with actual system integration
+- **Driver Management** - Install and uninstall virtual display drivers using SetupAPI
+- **Real-time Updates** - Live configuration changes using ChangeDisplaySettings and SetDisplayConfig APIs
 
 ### Advanced Features
-- **HDR Support** - High Dynamic Range display capabilities
-- **Stereoscopic 3D** - 3D display support for immersive applications
-- **Custom EDID** - Extended Display Identification Data management
+- **Real System Integration** - Direct Windows API calls for display management
+- **Registry-based Driver Detection** - Check driver installation status
+- **Registry-based Version Management** - Query driver versions from system registry
 - **Multi-display Support** - Manage multiple virtual displays simultaneously
+- **System Information Gathering** - Real-time system specs and display adapter enumeration
 
 ## 📋 Requirements
 

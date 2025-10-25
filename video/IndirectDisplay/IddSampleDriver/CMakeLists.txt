@@ -64,8 +64,12 @@ target_link_libraries(vdd_example vddsdk)
 add_executable(vddctl vddctl.cpp)
 target_link_libraries(vddctl vddsdk)
 
+# Create the performance test executable
+add_executable(performance_test performance_test.cpp)
+target_link_libraries(performance_test vddsdk_static)
+
 # Installation
-install(TARGETS vddsdk vdd_example vddctl
+install(TARGETS vddsdk vdd_example vddctl performance_test
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
