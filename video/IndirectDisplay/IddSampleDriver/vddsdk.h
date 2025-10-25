@@ -98,12 +98,13 @@ namespace vdd {
         std::wstring deviceInstanceId;     // PnP device instance ID
         bool isVirtual;                     // true for VDD adapters
         bool isActive;                      // currently enumerated and enabled
+        bool isPrimary;                     // primary display adapter
         std::string name;                   // friendly display name
         std::string manufacturer;           // manufacturer name
         std::string model;                  // model name
         std::string serialNumber;          // serial number
+        uint32_t adapterId;                 // adapter index
         uint32_t outputCount;              // number of outputs
-        bool isPrimary;                     // is primary display
     };
 
     /// <summary>
