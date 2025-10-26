@@ -22,6 +22,7 @@ Environment:
 #include <algorithm>
 #include <cfgmgr32.h>
 #include <newdev.h>
+#include <spapidef.h>
 #include <dxgi.h>
 #include <d3d11.h>
 #include <string>
@@ -555,7 +556,7 @@ namespace vdd {
         // Use SetupAPI to install the driver
         HINF hInf = SetupOpenInfFileW(infPath.c_str(), nullptr, INF_STYLE_WIN4, nullptr);
         if (hInf == INVALID_HANDLE_VALUE) {
-            SetLastError("Failed to open INF file: " + std::to_string(GetLastError()));
+            SetLastError("Failed to open INF file: " + std::to_string(::GetLastError()));
             return Status::DriverError;
         }
         
@@ -569,7 +570,7 @@ namespace vdd {
             SetLastError("Driver installed successfully");
             return Status::Ok;
         } else {
-            DWORD error = GetLastError();
+            DWORD error = ::GetLastError();
             SetLastError("Failed to install driver: " + std::to_string(error));
             return Status::DriverError;
         }
@@ -582,7 +583,7 @@ namespace vdd {
             DIGCF_PRESENT | DIGCF_PROFILE);
         
         if (hDevInfo == INVALID_HANDLE_VALUE) {
-            SetLastError("Failed to get display device information: " + std::to_string(GetLastError()));
+            SetLastError("Failed to get display device information: " + std::to_string(::GetLastError()));
             return Status::DriverError;
         }
         
@@ -614,19 +615,19 @@ namespace vdd {
         SP_REMOVEDEVICE_PARAMS removeParams = {};
         removeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
         removeParams.ClassInstallHeader.InstallFunction = DIF_REMOVE;
-        removeParams.Scope = DIREMOVE_GLOBAL;
+        removeParams.Scope = 0x00000001; // DIREMOVE_GLOBAL
         removeParams.HwProfile = 0;
         
         if (!SetupDiSetClassInstallParamsW(hDevInfo, &devInfoData, 
             reinterpret_cast<SP_CLASSINSTALL_HEADER*>(&removeParams), sizeof(removeParams))) {
             SetupDiDestroyDeviceInfoList(hDevInfo);
-            SetLastError("Failed to set remove parameters: " + std::to_string(GetLastError()));
+            SetLastError("Failed to set remove parameters: " + std::to_string(::GetLastError()));
             return Status::DriverError;
         }
         
         if (!SetupDiCallClassInstaller(DIF_REMOVE, hDevInfo, &devInfoData)) {
             SetupDiDestroyDeviceInfoList(hDevInfo);
-            SetLastError("Failed to remove driver: " + std::to_string(GetLastError()));
+            SetLastError("Failed to remove driver: " + std::to_string(::GetLastError()));
             return Status::DriverError;
         }
         
@@ -859,7 +860,6 @@ namespace vdd {
                 // Update internal state
                 if (outputIndex < m_activeDisplays.size()) {
                     m_activeDisplays[outputIndex].preferredMode = mode;
-                    m_activeDisplays[outputIndex].currentMode = mode;
                 }
                 SetLastError("Display mode set successfully for output " + std::to_string(outputIndex));
                 return Status::Ok;
