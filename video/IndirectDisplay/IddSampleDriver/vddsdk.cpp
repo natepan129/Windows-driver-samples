@@ -130,7 +130,14 @@ namespace vdd {
         }
 
         g_sdkInstance = std::make_unique<VddSdkImpl>();
-        return g_sdkInstance->Initialize(config);
+        Status status = g_sdkInstance->Initialize(config);
+        
+        // If initialization failed, clean up the instance
+        if (status != Status::Ok && status != Status::AlreadyInstalled) {
+            g_sdkInstance.reset();
+        }
+        
+        return status;
     }
 
     Status Shutdown() {
