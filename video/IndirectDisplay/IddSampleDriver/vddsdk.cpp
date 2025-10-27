@@ -400,7 +400,35 @@ namespace vdd {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
         if (!g_sdkInstance) {
-            return "SDK not initialized";
+            // Return basic system info even when SDK is not initialized
+            std::stringstream info;
+            
+            // Get Windows version
+            OSVERSIONINFOW osvi = {};
+            osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOW);
+            if (GetVersionExW(&osvi)) {
+                info << "Windows " << osvi.dwMajorVersion << "." << osvi.dwMinorVersion;
+                if (osvi.dwBuildNumber > 0) {
+                    info << " Build " << osvi.dwBuildNumber;
+                }
+                info << "\n";
+            }
+            
+            // Get system memory
+            MEMORYSTATUSEX memStatus = {};
+            memStatus.dwLength = sizeof(MEMORYSTATUSEX);
+            if (GlobalMemoryStatusEx(&memStatus)) {
+                info << "Total Memory: " << (memStatus.ullTotalPhys / (1024 * 1024)) << " MB\n";
+                info << "Available Memory: " << (memStatus.ullAvailPhys / (1024 * 1024)) << " MB\n";
+            }
+            
+            // Get processor info
+            SYSTEM_INFO sysInfo = {};
+            ::GetSystemInfo(&sysInfo);
+            info << "Processors: " << sysInfo.dwNumberOfProcessors << "\n";
+            info << "Architecture: " << (sysInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 ? "x64" : "x86") << "\n";
+            
+            return info.str();
         }
 
         return g_sdkInstance->GetSystemInfo();
@@ -502,6 +530,7 @@ namespace vdd {
         std::lock_guard<std::mutex> lock(m_mutex);
         
         if (m_initialized) {
+            SetLastError("SDK already initialized");
             return Status::AlreadyInstalled;
         }
 
@@ -512,6 +541,7 @@ namespace vdd {
         // TODO: Check driver availability
         
         m_initialized = true;
+        SetLastError("SDK initialized successfully");
         return Status::Ok;
     }
 
@@ -548,7 +578,7 @@ namespace vdd {
     // These would contain the actual implementation logic
 
     Status VddSdkImpl::InstallDriver(const std::wstring& infPath) {
-        // REAL IMPLEMENTATION - Install driver using Windows SetupAPI
+        // REAL IMPLEMENTATION - Install UMDF driver using proper Windows APIs
         if (infPath.empty()) {
             SetLastError("Driver INF path cannot be empty");
             return Status::InvalidArg;
@@ -560,21 +590,39 @@ namespace vdd {
             return Status::InvalidArg;
         }
         
-        // Use SetupAPI to install the driver
+        // For UMDF drivers, we need to use UpdateDriverForPlugAndPlayDevices
+        // This is the correct way to install UMDF drivers
+        
+        // First, try to install using UpdateDriverForPlugAndPlayDevices
+        BOOL result = UpdateDriverForPlugAndPlayDevicesW(
+            nullptr,  // hwndParent
+            L"ROOT\\IddSampleDriver",  // HardwareId
+            infPath.c_str(),  // FullInfPath
+            INSTALLFLAG_FORCE,  // InstallFlags
+            nullptr  // bRebootRequired
+        );
+        
+        if (result) {
+            SetLastError("UMDF driver installed successfully");
+            return Status::Ok;
+        }
+        
+        // If that fails, try the SetupAPI method as fallback
         HINF hInf = SetupOpenInfFileW(infPath.c_str(), nullptr, INF_STYLE_WIN4, nullptr);
         if (hInf == INVALID_HANDLE_VALUE) {
-            SetLastError("Failed to open INF file: " + std::to_string(::GetLastError()));
+            DWORD error = ::GetLastError();
+            SetLastError("Failed to open INF file: " + std::to_string(error));
             return Status::DriverError;
         }
         
-        // Install the driver
-        BOOL result = SetupInstallFromInfSectionW(nullptr, hInf, L"DefaultInstall", 
+        // Try installing from the correct section for UMDF
+        result = SetupInstallFromInfSectionW(nullptr, hInf, L"MyDevice_Install", 
             SPINST_ALL, nullptr, nullptr, 0, nullptr, nullptr, nullptr, nullptr);
         
         SetupCloseInfFile(hInf);
         
         if (result) {
-            SetLastError("Driver installed successfully");
+            SetLastError("Driver installed successfully via SetupAPI");
             return Status::Ok;
         } else {
             DWORD error = ::GetLastError();
