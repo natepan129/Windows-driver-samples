@@ -1496,7 +1496,3 @@ extern "C" {
     }
 
 }
-
-// Static variable definitions
-std::unique_ptr<vdd::VddSdkImpl> vdd::g_sdkInstance;
-std::mutex vdd::g_instanceMutex;
