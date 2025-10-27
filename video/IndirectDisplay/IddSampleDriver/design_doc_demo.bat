@@ -79,3 +79,4 @@ echo - 錯誤處理機制正常
 echo - 只需要修復 SDK 初始化問題即可完全工作
 echo.
 pause
+

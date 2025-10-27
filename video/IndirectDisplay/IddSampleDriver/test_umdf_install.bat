@@ -37,3 +37,4 @@ echo 如果看到 "UMDF driver installed successfully"，說明修復成功
 echo 如果仍然失敗，可能需要重新編譯或檢查權限
 echo.
 pause
+

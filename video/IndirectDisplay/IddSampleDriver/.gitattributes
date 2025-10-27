@@ -1,0 +1,40 @@
+# Git attributes for VDD SDK project
+
+# Text files
+*.cpp text eol=crlf
+*.h text eol=crlf
+*.hpp text eol=crlf
+*.c text eol=crlf
+*.md text eol=crlf
+*.txt text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# INF files (Windows driver installation files)
+*.inf text eol=crlf
+
+# Binary files
+*.exe binary
+*.dll binary
+*.lib binary
+*.obj binary
+*.pdb binary
+*.cat binary
+*.sys binary
+
+# Build files
+CMakeLists.txt text eol=crlf
+*.vcxproj text eol=crlf
+*.vcxproj.filters text eol=crlf
+*.sln text eol=crlf
+
+# Documentation
+*.md text eol=crlf
+*.rst text eol=crlf
+*.txt text eol=crlf
+
+# Scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh text eol=crlf

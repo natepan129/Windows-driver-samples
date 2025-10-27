@@ -40,3 +40,4 @@ echo 如果看到 "SDK not initialized" 錯誤，說明需要重新編譯
 echo 如果看到系統信息，說明修復已生效
 echo.
 pause
+
