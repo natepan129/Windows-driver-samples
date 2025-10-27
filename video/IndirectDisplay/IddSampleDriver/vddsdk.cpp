@@ -1495,8 +1495,8 @@ extern "C" {
         return statusStr.c_str();
     }
 
-    // Static variable definitions
-    std::unique_ptr<VddSdkImpl> g_sdkInstance;
-    std::mutex g_instanceMutex;
-
 }
+
+// Static variable definitions
+std::unique_ptr<vdd::VddSdkImpl> vdd::g_sdkInstance;
+std::mutex vdd::g_instanceMutex;
