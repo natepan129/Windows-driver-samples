@@ -115,8 +115,8 @@ namespace vdd {
     // Global SDK Instance
     // ============================================================================
 
-    static std::unique_ptr<VddSdkImpl> g_sdkInstance;
-    static std::mutex g_instanceMutex;
+    std::unique_ptr<VddSdkImpl> g_sdkInstance;
+    std::mutex g_instanceMutex;
 
     // ============================================================================
     // Public API Implementation
