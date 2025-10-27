@@ -152,7 +152,7 @@ void cmdInit(const ArgumentParser& args) {
     config.maxLogLevel = 2; // Info level
     
     Status status = Initialize(config);
-    if (status == Status::Ok) {
+    if (status == Status::Ok || status == Status::AlreadyInstalled) {
         std::cout << "VDD SDK initialized successfully." << std::endl;
     } else {
         std::cout << "Failed to initialize VDD SDK: " << StatusToString(status) << std::endl;
