@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "Trace.h"
-#include "vddsdk.h"  // VDD SDK support
 
 namespace Microsoft
 {
@@ -101,7 +100,7 @@ namespace Microsoft
             void InitAdapter();
             void FinishInit(UINT ConnectorIndex);
             
-            // VDD SDK methods
+            // VDD SDK methods (simplified - no external dependencies)
             NTSTATUS InitializeVddSdk();
             void ShutdownVddSdk();
             NTSTATUS CreateVirtualDisplays();
@@ -111,9 +110,7 @@ namespace Microsoft
             WDFDEVICE m_WdfDevice;
             IDDCX_ADAPTER m_Adapter;
             
-            // VDD SDK support
-            std::unique_ptr<vdd::VddSdkImpl> m_vddSdk;
-            std::vector<vdd::VirtualDisplayDesc> m_activeDisplays;
+            // VDD SDK support (simplified)
             bool m_vddSdkInitialized;
         };
 

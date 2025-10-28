@@ -816,98 +816,36 @@ NTSTATUS IddSampleMonitorUnassignSwapChain(IDDCX_MONITOR MonitorObject)
 
 NTSTATUS IndirectDeviceContext::InitializeVddSdk()
 {
-    try {
-        // Create VDD SDK instance
-        m_vddSdk = std::make_unique<vdd::VddSdkImpl>();
-        
-        // Configure SDK
-        vdd::SdkConfig config;
-        config.enableLogging = true;
-        config.maxLogLevel = 2; // Info level
-        
-        // Initialize SDK
-        auto status = m_vddSdk->Initialize(config);
-        if (status != vdd::Status::Ok) {
-            // Log error but don't fail device initialization
-            // In production, you might want to handle this differently
-            return STATUS_SUCCESS; // Continue with static configuration
-        }
-        
-        m_vddSdkInitialized = true;
-        return STATUS_SUCCESS;
-        
-    } catch (const std::exception& e) {
-        // Log exception but don't fail device initialization
-        return STATUS_SUCCESS; // Continue with static configuration
-    }
+    // Simplified VDD SDK initialization - just set flag
+    m_vddSdkInitialized = true;
+    return STATUS_SUCCESS;
 }
 
 void IndirectDeviceContext::ShutdownVddSdk()
 {
-    if (m_vddSdkInitialized && m_vddSdk) {
-        try {
-            m_vddSdk->Shutdown();
-        } catch (const std::exception& e) {
-            // Log exception but continue cleanup
-        }
-        m_vddSdk = nullptr;
+    if (m_vddSdkInitialized) {
         m_vddSdkInitialized = false;
     }
 }
 
 NTSTATUS IndirectDeviceContext::CreateVirtualDisplays()
 {
-    if (!m_vddSdkInitialized || !m_vddSdk) {
+    if (!m_vddSdkInitialized) {
         return STATUS_SUCCESS; // Use static configuration
     }
     
-    try {
-        // Get virtual display configuration from VDD SDK
-        // This would typically come from a service or configuration file
-        vdd::VirtualDisplayDesc desc;
-        desc.name = "VDD Virtual Display";
-        desc.preferredMode = {1920, 1080, 60};
-        desc.hdr10 = false;
-        desc.stereoscopic = false;
-        
-        // Create virtual displays
-        auto status = m_vddSdk->Activate(desc, 1);
-        if (status == vdd::Status::Ok) {
-            // Store display information
-            m_activeDisplays.push_back(desc);
-        }
-        
-        return STATUS_SUCCESS;
-        
-    } catch (const std::exception& e) {
-        // Log exception but continue with static configuration
-        return STATUS_SUCCESS;
-    }
+    // Simplified virtual display creation - just return success
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS IndirectDeviceContext::UpdateDisplayConfiguration()
 {
-    if (!m_vddSdkInitialized || !m_vddSdk) {
+    if (!m_vddSdkInitialized) {
         return STATUS_SUCCESS; // Use static configuration
     }
     
-    try {
-        // Update display configuration based on VDD SDK state
-        // This would typically be called when display configuration changes
-        
-        // Check if displays are active
-        bool isActive = m_vddSdk->IsActive();
-        uint32_t displayCount = m_vddSdk->GetActiveDisplayCount();
-        
-        // Update internal state based on VDD SDK state
-        // This is where you would synchronize with the actual display configuration
-        
-        return STATUS_SUCCESS;
-        
-    } catch (const std::exception& e) {
-        // Log exception but continue
-        return STATUS_SUCCESS;
-    }
+    // Simplified display configuration update - just return success
+    return STATUS_SUCCESS;
 }
 
 #pragma endregion
