@@ -76,3 +76,6 @@ echo 如果看到 "Driver Installed: Yes"，說明修復成功！
 echo 如果虛擬顯示激活成功，說明 VDD 完全工作！
 echo.
 pause
+
+
+

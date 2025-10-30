@@ -338,7 +338,7 @@ void cmdList(const ArgumentParser& args) {
 void cmdInstall(const ArgumentParser& args) {
     std::cout << "Installing driver..." << std::endl;
     
-    std::string infPath = args.getOption("path", "IddSampleDriver.inf");
+    std::string infPath = args.getOption("inf", "IddSampleDriver.inf");
     Status status = InstallDriver(std::wstring(infPath.begin(), infPath.end()));
     if (status == Status::Ok) {
         std::cout << "Driver installed successfully." << std::endl;

@@ -60,3 +60,6 @@ echo 如果看到 "All installation methods failed"，說明需要檢查權限�
 echo.
 pause
 
+
+
+

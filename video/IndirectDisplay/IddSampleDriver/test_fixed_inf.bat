@@ -1,59 +1,25 @@
 @echo off
-REM 使用修復 INF 文件的測試
-
+chcp 65001 >nul
 echo ========================================
-echo 使用修復 INF 文件的測試
+echo 测试修复后的 INF 文件
 echo ========================================
 echo.
 
-REM 檢查是否為管理員
-net session >nul 2>&1
-if %errorlevel% == 0 (
-    echo ✅ 已獲得管理員權限
-) else (
-    echo ❌ 需要管理員權限
-    pause
-    exit /b 1
-)
+echo [步骤 1] 卸载旧设备
+echo ----------------------------------------
+powershell -Command "& { $d = Get-PnpDevice | Where-Object { $_.InstanceId -like '*IddSampleDriver*' }; if ($d) { foreach ($dev in $d) { Write-Host '正在移除:' $dev.InstanceId; pnputil /remove-device $dev.InstanceId } } else { Write-Host '没有找到旧设备' } }"
 
 echo.
-echo ========================================
-echo 測試 1: 檢查修復的 INF 文件
-echo ========================================
-if exist "IddSampleDriver_Fixed.inf" (
-    echo ✅ 修復的 INF 文件存在
-) else (
-    echo ❌ 修復的 INF 文件不存在
-    pause
-    exit /b 1
-)
-
-echo.
-echo ========================================
-echo 測試 2: 使用修復的 INF 文件測試 pnputil
-echo ========================================
-echo 命令: pnputil /add-driver "IddSampleDriver_Fixed.inf" /install
-pnputil /add-driver "IddSampleDriver_Fixed.inf" /install
-
-echo.
-echo ========================================
-echo 測試 3: 檢查驅動是否安裝成功
-echo ========================================
-pnputil /enum-drivers | findstr "IddSampleDriver"
-
-echo.
-echo ========================================
-echo 測試 4: 使用 vddctl 檢查狀態
-echo ========================================
-build\bin\Release\vddctl.exe init
-build\bin\Release\vddctl.exe status
-
-echo.
-echo ========================================
-echo 測試完成
-echo ========================================
-echo.
-echo 如果看到 "Driver installed successfully via pnputil"，說明修復成功！
-echo.
+echo [步骤 2] 使用修复后的 INF 重新安装
+echo ----------------------------------------
 pause
 
+REM 重新编译安装工具
+echo 编译安装工具...
+call compile_and_install.bat
+
+echo.
+echo ========================================
+echo 安装完成！
+echo ========================================
+pause
