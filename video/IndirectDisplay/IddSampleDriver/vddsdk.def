@@ -1,0 +1,36 @@
+LIBRARY vddsdk
+EXPORTS
+    ; Version and SDK management
+    GetVersion
+    Initialize
+    Shutdown
+    GetLastError
+    StatusToString
+    GetSystemInfo
+    
+    ; Driver management
+    IsDriverInstalled
+    GetDriverVersion
+    InstallDriver
+    UninstallDriver
+    
+    ; Display activation
+    IsActive
+    GetActiveDisplayCount
+    Activate
+    Deactivate
+    
+    ; Display configuration
+    SetMode
+    GetCurrentMode
+    SetLocation
+    GetLocation
+    SetPrimary
+    IsPrimary
+    
+    ; Display enumeration
+    EnumerateAdapters
+    EnumerateModes
+    GetAdapterInfo
+    GetDisplayInfo
+

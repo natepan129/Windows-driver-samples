@@ -580,9 +580,8 @@ namespace vdd {
     // These would contain the actual implementation logic
 
     Status VddSdkImpl::InstallDriver(const std::wstring& infPath) {
-        // VERIFIED WORKING METHOD from setupapi_install_simple.cpp
-        // Key insight: UpdateDriverForPlugAndPlayDevices may return error but still succeed
-        // We don't rollback "partial success" - the device may be working fine
+        // PROPER SETUPAPI METHOD: Create device, select driver from INF, install
+        // This avoids creating duplicate devices with UpdateDriverForPlugAndPlayDevicesW
         
         if (infPath.empty()) {
             SetLastError("Driver INF path cannot be empty");
@@ -601,7 +600,7 @@ namespace vdd {
         
         HDEVINFO deviceInfoSet = INVALID_HANDLE_VALUE;
         SP_DEVINFO_DATA devInfoData = {};
-        Status result = Status::Ok;
+        SP_DEVINSTALL_PARAMS_W installParams = {};
         
         // Step 1: Create device info list
         deviceInfoSet = SetupDiCreateDeviceInfoList(&displayClassGuid, nullptr);
@@ -643,7 +642,7 @@ namespace vdd {
             return Status::DriverError;
         }
         
-        // Step 4: Register device
+        // Step 4: Register device (creates device node)
         if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, deviceInfoSet, &devInfoData)) {
             DWORD error = ::GetLastError();
             SetLastError("Failed to register device: " + std::to_string(error));
@@ -651,33 +650,56 @@ namespace vdd {
             return Status::DriverError;
         }
         
-        // Step 5: Install driver
-        // KEY: DIF_INSTALLDEVICE usually fails, but UpdateDriverForPlugAndPlayDevices
-        // as fallback will correctly set the Device Class even if it returns an error
+        // Step 5: Set device install params to use specific INF
+        installParams.cbSize = sizeof(SP_DEVINSTALL_PARAMS_W);
+        if (!SetupDiGetDeviceInstallParamsW(deviceInfoSet, &devInfoData, &installParams)) {
+            DWORD error = ::GetLastError();
+            SetLastError("Failed to get install params: " + std::to_string(error));
+            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+            return Status::DriverError;
+        }
+        
+        wcscpy_s(installParams.DriverPath, infPath.c_str());
+        installParams.Flags |= DI_ENUMSINGLEINF;  // Use only this INF
+        
+        if (!SetupDiSetDeviceInstallParamsW(deviceInfoSet, &devInfoData, &installParams)) {
+            DWORD error = ::GetLastError();
+            SetLastError("Failed to set install params: " + std::to_string(error));
+            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+            return Status::DriverError;
+        }
+        
+        // Step 6: Build driver list from INF
+        if (!SetupDiBuildDriverInfoList(deviceInfoSet, &devInfoData, SPDIT_CLASSDRIVER)) {
+            DWORD error = ::GetLastError();
+            SetLastError("Failed to build driver info list: " + std::to_string(error));
+            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+            return Status::DriverError;
+        }
+        
+        // Step 7: Select best compatible driver
+        if (!SetupDiCallClassInstaller(DIF_SELECTBESTCOMPATDRV, deviceInfoSet, &devInfoData)) {
+            DWORD error = ::GetLastError();
+            SetLastError("Failed to select driver: " + std::to_string(error));
+            SetupDiDestroyDriverInfoList(deviceInfoSet, &devInfoData, SPDIT_CLASSDRIVER);
+            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+            return Status::DriverError;
+        }
+        
+        // Step 8: Install the selected driver to the device
         if (!SetupDiCallClassInstaller(DIF_INSTALLDEVICE, deviceInfoSet, &devInfoData)) {
-            // Try fallback: UpdateDriverForPlugAndPlayDevices
-            // This is the KEY method that correctly sets Display Class
-            BOOL reboot = FALSE;
-            UpdateDriverForPlugAndPlayDevicesW(
-                nullptr,
-                L"ROOT\\IddSampleDriver",
-                infPath.c_str(),
-                INSTALLFLAG_FORCE,
-                &reboot);
-            
-            // NOTE: We ignore the return value because the device may be created successfully
-            // even if this function returns FALSE (signature warnings, etc.)
-            // The device will be visible in Device Manager with correct Class
-            
-            SetLastError("Driver installation attempted via UpdateDriverForPlugAndPlayDevices");
-        } else {
-            SetLastError("Driver installed successfully via DIF_INSTALLDEVICE");
+            DWORD error = ::GetLastError();
+            SetLastError("Failed to install device: " + std::to_string(error));
+            SetupDiDestroyDriverInfoList(deviceInfoSet, &devInfoData, SPDIT_CLASSDRIVER);
+            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+            return Status::DriverError;
         }
         
         // Cleanup
+        SetupDiDestroyDriverInfoList(deviceInfoSet, &devInfoData, SPDIT_CLASSDRIVER);
         SetupDiDestroyDeviceInfoList(deviceInfoSet);
         
-        // Return success - if device is not actually installed, user can verify with IsDriverInstalled()
+        SetLastError("Driver installed successfully");
         return Status::Ok;
     }
 

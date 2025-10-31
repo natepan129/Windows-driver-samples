@@ -19,6 +19,7 @@ Environment:
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <Windows.h>
 
 using namespace vdd;
 
@@ -109,13 +110,28 @@ void printHelp() {
 
 // Print version information
 void printVersion() {
-    Version version = GetVersion();
+    Version version = vdd::GetVersion();
     std::cout << "VDD SDK Version: " << version.major << "." 
               << version.minor << "." << version.patch << std::endl;
     std::cout << "Build Date: " << __DATE__ << " " << __TIME__ << std::endl;
 }
 
 // Print status information
+// Check if running as administrator
+bool IsRunningAsAdmin() {
+    BOOL isAdmin = FALSE;
+    PSID adminGroup = NULL;
+    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+    
+    if (AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
+                                  DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &adminGroup)) {
+        CheckTokenMembership(NULL, adminGroup, &isAdmin);
+        FreeSid(adminGroup);
+    }
+    
+    return isAdmin == TRUE;
+}
+
 void printStatus() {
     std::cout << "VDD SDK Status:" << std::endl;
     std::cout << "==============" << std::endl;
@@ -157,7 +173,7 @@ void cmdInit(const ArgumentParser& args) {
     } else {
         std::cout << "Failed to initialize VDD SDK: " << StatusToString(status) << std::endl;
         if (status != Status::Ok) {
-            std::cout << "Error: " << GetLastError() << std::endl;
+            std::cout << "Error: " << vdd::GetLastError() << std::endl;
         }
     }
 }
@@ -199,7 +215,7 @@ void cmdActivate(const ArgumentParser& args) {
     } else {
         std::cout << "Failed to activate virtual display: " << StatusToString(status) << std::endl;
         if (status != Status::Ok) {
-            std::cout << "Error: " << GetLastError() << std::endl;
+            std::cout << "Error: " << vdd::GetLastError() << std::endl;
         }
     }
 }
@@ -214,7 +230,7 @@ void cmdDeactivate(const ArgumentParser& args) {
     } else {
         std::cout << "Failed to deactivate virtual display: " << StatusToString(status) << std::endl;
         if (status != Status::Ok) {
-            std::cout << "Error: " << GetLastError() << std::endl;
+            std::cout << "Error: " << vdd::GetLastError() << std::endl;
         }
     }
 }
@@ -239,7 +255,7 @@ void cmdSetMode(const ArgumentParser& args) {
     } else {
         std::cout << "Failed to set display mode: " << StatusToString(status) << std::endl;
         if (status != Status::Ok) {
-            std::cout << "Error: " << GetLastError() << std::endl;
+            std::cout << "Error: " << vdd::GetLastError() << std::endl;
         }
     }
 }
@@ -264,7 +280,7 @@ void cmdSetLocation(const ArgumentParser& args) {
     } else {
         std::cout << "Failed to set display location: " << StatusToString(status) << std::endl;
         if (status != Status::Ok) {
-            std::cout << "Error: " << GetLastError() << std::endl;
+            std::cout << "Error: " << vdd::GetLastError() << std::endl;
         }
     }
 }
@@ -282,7 +298,7 @@ void cmdSetPrimary(const ArgumentParser& args) {
     } else {
         std::cout << "Failed to set primary display: " << StatusToString(status) << std::endl;
         if (status != Status::Ok) {
-            std::cout << "Error: " << GetLastError() << std::endl;
+            std::cout << "Error: " << vdd::GetLastError() << std::endl;
         }
     }
 }
@@ -337,22 +353,108 @@ void cmdList(const ArgumentParser& args) {
 // Install driver
 void cmdInstall(const ArgumentParser& args) {
     std::cout << "Installing driver..." << std::endl;
+    std::cout << "========================================" << std::endl;
+    
+    // Check for administrator privileges
+    if (!IsRunningAsAdmin()) {
+        std::cout << "ERROR: Administrator privileges required!" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Please run this command as administrator:" << std::endl;
+        std::cout << "  Right-click -> Run as administrator" << std::endl;
+        std::cout << "  Or use: Start-Process -Verb RunAs" << std::endl;
+        std::cout << "========================================" << std::endl;
+        return;
+    }
+    std::cout << "Administrator check: OK" << std::endl;
+    std::cout << "----------------------------------------" << std::endl;
+    
+    // Initialize SDK first if not already initialized
+    SdkConfig config;
+    config.enableLogging = args.hasOption("verbose");
+    config.maxLogLevel = 2;
+    
+    Status initStatus = Initialize(config);
+    if (initStatus != Status::Ok && initStatus != Status::AlreadyInstalled) {
+        std::cout << "Failed to initialize SDK: " << StatusToString(initStatus) << std::endl;
+        std::cout << "Error: " << vdd::GetLastError() << std::endl;
+        return;
+    }
+    std::cout << "SDK initialized" << std::endl;
+    std::cout << "----------------------------------------" << std::endl;
     
     std::string infPath = args.getOption("inf", "IddSampleDriver.inf");
-    Status status = InstallDriver(std::wstring(infPath.begin(), infPath.end()));
+    std::cout << "INF Path (raw): " << infPath << std::endl;
+    
+    // Convert to wstring
+    std::wstring winfPath(infPath.begin(), infPath.end());
+    std::wcout << L"INF Path (wide): " << winfPath << std::endl;
+    
+    // Get absolute path
+    wchar_t absPath[MAX_PATH];
+    DWORD result = GetFullPathNameW(winfPath.c_str(), MAX_PATH, absPath, nullptr);
+    if (result == 0) {
+        std::cout << "ERROR: Failed to get absolute path" << std::endl;
+        return;
+    }
+    std::wcout << L"Absolute Path: " << absPath << std::endl;
+    
+    // Check if file exists
+    DWORD fileAttr = GetFileAttributesW(absPath);
+    if (fileAttr == INVALID_FILE_ATTRIBUTES) {
+        std::cout << "ERROR: INF file not found!" << std::endl;
+        std::cout << "Please check the file path." << std::endl;
+        return;
+    } else {
+        std::cout << "File exists: OK" << std::endl;
+    }
+    
+    std::cout << "----------------------------------------" << std::endl;
+    std::cout << "Calling InstallDriver() with absolute path..." << std::endl;
+    
+    // Use absolute path
+    Status status = InstallDriver(absPath);
+    
+    std::cout << "----------------------------------------" << std::endl;
     if (status == Status::Ok) {
         std::cout << "Driver installed successfully." << std::endl;
     } else {
         std::cout << "Failed to install driver: " << StatusToString(status) << std::endl;
-        if (status != Status::Ok) {
-            std::cout << "Error: " << GetLastError() << std::endl;
-        }
+        std::cout << "Error details: " << vdd::GetLastError() << std::endl;
     }
+    std::cout << "========================================" << std::endl;
 }
 
 // Uninstall driver
 void cmdUninstall(const ArgumentParser& args) {
     std::cout << "Uninstalling driver..." << std::endl;
+    std::cout << "========================================" << std::endl;
+    
+    // Check for administrator privileges
+    if (!IsRunningAsAdmin()) {
+        std::cout << "ERROR: Administrator privileges required!" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Please run this command as administrator:" << std::endl;
+        std::cout << "  Right-click -> Run as administrator" << std::endl;
+        std::cout << "  Or use: Start-Process -Verb RunAs" << std::endl;
+        std::cout << "========================================" << std::endl;
+        return;
+    }
+    std::cout << "Administrator check: OK" << std::endl;
+    std::cout << "----------------------------------------" << std::endl;
+    
+    // Initialize SDK first if not already initialized
+    SdkConfig config;
+    config.enableLogging = args.hasOption("verbose");
+    config.maxLogLevel = 2;
+    
+    Status initStatus = Initialize(config);
+    if (initStatus != Status::Ok && initStatus != Status::AlreadyInstalled) {
+        std::cout << "Failed to initialize SDK: " << StatusToString(initStatus) << std::endl;
+        std::cout << "Error: " << vdd::GetLastError() << std::endl;
+        return;
+    }
+    std::cout << "SDK initialized" << std::endl;
+    std::cout << "----------------------------------------" << std::endl;
     
     Status status = UninstallDriver();
     if (status == Status::Ok) {
@@ -360,7 +462,7 @@ void cmdUninstall(const ArgumentParser& args) {
     } else {
         std::cout << "Failed to uninstall driver: " << StatusToString(status) << std::endl;
         if (status != Status::Ok) {
-            std::cout << "Error: " << GetLastError() << std::endl;
+            std::cout << "Error: " << vdd::GetLastError() << std::endl;
         }
     }
 }

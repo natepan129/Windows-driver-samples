@@ -1,0 +1,7 @@
+Uninstalling driver...
+========================================
+Administrator check: OK
+----------------------------------------
+SDK initialized
+----------------------------------------
+Driver uninstalled successfully.
