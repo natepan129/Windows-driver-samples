@@ -57,17 +57,9 @@ target_link_libraries(vddsdk
     kernel32
 )
 
-# Create the example executable
-add_executable(vdd_example vdd_example.cpp)
-target_link_libraries(vdd_example vddsdk)
-
 # Create the CLI tool executable
 add_executable(vddctl vddctl.cpp)
 target_link_libraries(vddctl vddsdk)
-
-# Create the performance test executable
-add_executable(performance_test performance_test.cpp)
-target_link_libraries(performance_test vddsdk_static)
 
 # Installation
 install(TARGETS vddsdk vdd_example vddctl performance_test

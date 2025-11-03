@@ -259,3 +259,5 @@ powershell -Command "Get-PnpDevice | Where-Object { $_.FriendlyName -like '*IddS
 - 根据输出信息采取对应措施
 - 可能需要添加更多内部日志
 
+
+

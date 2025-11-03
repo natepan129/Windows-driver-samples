@@ -207,3 +207,5 @@ Status VddSdkImpl::InstallDriver(const std::wstring& infPath) {
 - "部分成功"实际上就是成功（设备可用）
 - 失败的设备可以用 uninstall_driver.exe 手动清理
 
+
+

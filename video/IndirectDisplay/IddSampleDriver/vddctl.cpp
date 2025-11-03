@@ -372,7 +372,8 @@ void cmdInstall(const ArgumentParser& args) {
     std::cout << "Note: Please ensure 'vddctl init' was called first" << std::endl;
     std::cout << "----------------------------------------" << std::endl;
     
-    std::string infPath = args.getOption("inf", "IddSampleDriver.inf");
+    // Get INF path from positional argument (vddctl install <inf_path>)
+    std::string infPath = args.positional.size() > 1 ? args.positional[1] : "IddSampleDriver.inf";
     std::cout << "INF Path (raw): " << infPath << std::endl;
     
     // Convert to wstring

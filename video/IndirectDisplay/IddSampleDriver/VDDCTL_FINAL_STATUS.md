@@ -297,3 +297,5 @@ cmd /c quick_install_vddctl.bat
 2. 添加管理员权限检查
 3. 开始实现 activate/deactivate 功能
 
+
+

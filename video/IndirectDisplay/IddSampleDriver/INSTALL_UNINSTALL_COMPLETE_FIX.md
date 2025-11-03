@@ -351,3 +351,4 @@ bool VddSdkImpl::IsDriverInstalled() {
 - Driver Store 清理需要在安裝時保存 INF 路徑（未來改進）
 - Reboot 信息已通過 `SetLastError` 傳遞
 
+

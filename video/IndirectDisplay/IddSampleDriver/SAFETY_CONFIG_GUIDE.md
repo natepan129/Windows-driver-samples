@@ -387,3 +387,5 @@ config.autoRollbackOnFailure = false;  // 僅在需要分析失敗狀態時
 - `vddsdk.h` - API 參考
 - `DRIVER_INSTALL_GUIDE.md` - 獨立工具使用指南
 
+
+
