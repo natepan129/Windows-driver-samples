@@ -202,12 +202,11 @@ void testSystemInfo() {
 void testUtilityFunctions() {
     std::cout << "\n測試工具函數..." << std::endl;
     
-    bool isAdmin = IsRunningAsAdministrator();
-    bool elevated = RequestElevation();
+    // Note: IsRunningAsAdministrator() and RequestElevation() are now internal functions
+    // They are used internally by InstallDriver/UninstallDriver
     
-    SimpleTest::runTest("管理員權限檢查", true); // 這個測試總是通過
-    std::cout << "管理員權限: " << (isAdmin ? "是" : "否") << std::endl;
-    std::cout << "權限提升: " << (elevated ? "成功" : "失敗") << std::endl;
+    SimpleTest::runTest("管理員權限檢查", true); // Skip this test
+    std::cout << "管理員權限檢查已跳過（內部函數）" << std::endl;
 }
 
 void testDriverStatus() {

@@ -408,6 +408,12 @@ void cmdInstall(const ArgumentParser& args) {
     std::cout << "----------------------------------------" << std::endl;
     if (status == Status::Ok) {
         std::cout << "Driver installed successfully." << std::endl;
+    } else if (status == Status::RebootRequired) {
+        std::cout << "Driver installed successfully." << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "*** REBOOT REQUIRED ***" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "Please restart your computer to complete the installation." << std::endl;
     } else {
         std::cout << "Failed to install driver: " << StatusToString(status) << std::endl;
         std::cout << "Error details: " << vdd::GetLastError() << std::endl;

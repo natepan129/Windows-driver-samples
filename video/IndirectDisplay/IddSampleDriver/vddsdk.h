@@ -54,8 +54,9 @@ namespace vdd {
         OutOfMemory = 12,         // Insufficient memory
         InvalidState = 13,        // Invalid operation for current state
         ServiceUnavailable = 14,   // VDD service not available
-        LeaseExpired = 15,        // Session lease expired
-        ConcurrentAccess = 16      // Concurrent access not allowed
+        RebootRequired = 15,       // System reboot required to complete operation
+        LeaseExpired = 16,        // Session lease expired
+        ConcurrentAccess = 17      // Concurrent access not allowed
     };
 
     /// <summary>
@@ -410,17 +411,8 @@ namespace vdd {
     /// <returns>String representation</returns>
     std::string StatusToString(Status status);
 
-    /// <summary>
-    /// Check if the current process has administrator privileges
-    /// </summary>
-    /// <returns>true if running as administrator</returns>
-    bool IsRunningAsAdministrator();
-
-    /// <summary>
-    /// Request elevation for administrator privileges
-    /// </summary>
-    /// <returns>true if elevation was successful</returns>
-    bool RequestElevation();
+    // Note: IsRunningAsAdministrator() and RequestElevation() are internal helper functions
+    // They are used internally by InstallDriver/UninstallDriver and not exposed to users
 
 } // namespace vdd
 

@@ -142,6 +142,25 @@ namespace vdd {
     std::mutex g_instanceMutex;
 
     // ============================================================================
+    // Helper Functions
+    // ============================================================================
+    
+    // Get or create instance for query operations (auto-create if needed)
+    // NOTE: Caller must already hold g_instanceMutex lock!
+    VddSdkImpl* GetOrCreateInstance_Locked() {
+        if (!g_sdkInstance) {
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
+        }
+        return g_sdkInstance.get();
+    }
+    
+    // Get instance for control operations (require explicit initialization)
+    // NOTE: Caller must already hold g_instanceMutex lock!
+    VddSdkImpl* GetInstanceStrict_Locked() {
+        return g_sdkInstance.get();
+    }
+
+    // ============================================================================
     // Public API Implementation
     // ============================================================================
 
@@ -182,252 +201,223 @@ namespace vdd {
     Status InstallDriver(const std::wstring& infPath) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // InstallDriver doesn't need SDK instance - it's a standalone operation
-        // Create temporary instance if needed
-        if (!g_sdkInstance) {
-            g_sdkInstance = std::make_unique<VddSdkImpl>();
-        }
-
-        return g_sdkInstance->InstallDriver(infPath);
+        // InstallDriver is a standalone operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        return impl->InstallDriver(infPath);
     }
 
     Status UninstallDriver() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // UninstallDriver doesn't need SDK instance - it's a standalone operation
-        // Create temporary instance if needed
-        if (!g_sdkInstance) {
-            g_sdkInstance = std::make_unique<VddSdkImpl>();
-        }
-
-        return g_sdkInstance->UninstallDriver();
+        // UninstallDriver is a standalone operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        return impl->UninstallDriver();
     }
 
     bool IsDriverInstalled() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Auto-create instance if needed (since each vddctl call is a separate process)
-        if (!g_sdkInstance) {
-            g_sdkInstance = std::make_unique<VddSdkImpl>();
-        }
-
-        return g_sdkInstance->IsDriverInstalled();
+        // Query operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        return impl->IsDriverInstalled();
     }
 
     Version GetDriverVersion() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Auto-create instance if needed
-        if (!g_sdkInstance) {
-            g_sdkInstance = std::make_unique<VddSdkImpl>();
-        }
-
-        return g_sdkInstance->GetDriverVersion();
+        // Query operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        return impl->GetDriverVersion();
     }
 
     Status Activate(const VirtualDisplayDesc& desc, uint32_t count) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->Activate(desc, count);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->Activate(desc, count);
     }
 
     Status Deactivate() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->Deactivate();
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->Deactivate();
     }
 
     bool IsActive() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Auto-create instance if needed
-        if (!g_sdkInstance) {
-            g_sdkInstance = std::make_unique<VddSdkImpl>();
-        }
-
-        return g_sdkInstance->IsActive();
+        // Query operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        return impl->IsActive();
     }
 
     uint32_t GetActiveDisplayCount() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Auto-create instance if needed
-        if (!g_sdkInstance) {
-            g_sdkInstance = std::make_unique<VddSdkImpl>();
-        }
-
-        return g_sdkInstance->GetActiveDisplayCount();
+        // Query operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        return impl->GetActiveDisplayCount();
     }
 
     Status SetMode(uint32_t outputIndex, const DisplayMode& mode) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->SetMode(outputIndex, mode);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->SetMode(outputIndex, mode);
     }
 
     Status SetLocation(uint32_t outputIndex, const DisplayRect& rect) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->SetLocation(outputIndex, rect);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->SetLocation(outputIndex, rect);
     }
 
     Status SetPrimary(uint32_t outputIndex) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->SetPrimary(outputIndex);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->SetPrimary(outputIndex);
     }
 
     Status GetMode(uint32_t outputIndex, DisplayMode& mode) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->GetMode(outputIndex, mode);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->GetMode(outputIndex, mode);
     }
 
     Status GetLocation(uint32_t outputIndex, DisplayRect& rect) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->GetLocation(outputIndex, rect);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->GetLocation(outputIndex, rect);
     }
 
     Status EnumerateAdapters(std::vector<AdapterInfo>& adapters) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Auto-create instance if needed
-        if (!g_sdkInstance) {
-            g_sdkInstance = std::make_unique<VddSdkImpl>();
-        }
-
-        return g_sdkInstance->EnumerateAdapters(adapters);
+        // Query operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        return impl->EnumerateAdapters(adapters);
     }
 
     Status EnumerateModes(uint32_t outputIndex, std::vector<DisplayMode>& modes) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Auto-create instance if needed
-        if (!g_sdkInstance) {
-            g_sdkInstance = std::make_unique<VddSdkImpl>();
-        }
-
-        return g_sdkInstance->EnumerateModes(outputIndex, modes);
+        // Query operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        return impl->EnumerateModes(outputIndex, modes);
     }
 
     Status FindDxgiOutputByName(const std::string& name, void** ppOutput) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->FindDxgiOutputByName(name, ppOutput);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->FindDxgiOutputByName(name, ppOutput);
     }
 
     Status BeginSession(LeaseHandle& lease) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->BeginSession(lease);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->BeginSession(lease);
     }
 
     Status ActivateLeased(const ActivateOptions& options, LeaseHandle lease) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->ActivateLeased(options, lease);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->ActivateLeased(options, lease);
     }
 
     Status Heartbeat(LeaseHandle lease) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->Heartbeat(lease);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->Heartbeat(lease);
     }
 
     Status EndSession(LeaseHandle lease) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->EndSession(lease);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->EndSession(lease);
     }
 
     Status GetSessionState(LeaseHandle lease, bool& isActive, uint32_t& timeRemainingMs) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->GetSessionState(lease, isActive, timeRemainingMs);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->GetSessionState(lease, isActive, timeRemainingMs);
     }
 
     Status RecoverOrphanedState() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->RecoverOrphanedState();
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->RecoverOrphanedState();
     }
 
     Status EnsureDriverRunning() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->EnsureDriverRunning();
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->EnsureDriverRunning();
     }
 
     std::string GetLastError() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Auto-create instance if needed
-        if (!g_sdkInstance) {
-            g_sdkInstance = std::make_unique<VddSdkImpl>();
-        }
-
-        return g_sdkInstance->GetLastError();
+        // Query operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        return impl->GetLastError();
     }
 
     std::string GetSystemInfo() {
@@ -471,41 +461,41 @@ namespace vdd {
     Status SetHdrSupport(uint32_t outputIndex, bool enable) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->SetHdrSupport(outputIndex, enable);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->SetHdrSupport(outputIndex, enable);
     }
 
     Status SetStereoSupport(uint32_t outputIndex, bool enable) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->SetStereoSupport(outputIndex, enable);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->SetStereoSupport(outputIndex, enable);
     }
 
     Status SetCustomEdid(uint32_t outputIndex, const std::vector<uint8_t>& edidData) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->SetCustomEdid(outputIndex, edidData);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->SetCustomEdid(outputIndex, edidData);
     }
 
     Status GetEdid(uint32_t outputIndex, std::vector<uint8_t>& edidData) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        if (!g_sdkInstance) {
-            return Status::NotInstalled;
-        }
-
-        return g_sdkInstance->GetEdid(outputIndex, edidData);
+        // Control operation - require explicit initialization
+        VddSdkImpl* impl = GetInstanceStrict_Locked();
+        if (!impl) return Status::NotInstalled;
+        
+        return impl->GetEdid(outputIndex, edidData);
     }
 
     // ============================================================================
@@ -529,6 +519,7 @@ namespace vdd {
             case Status::OutOfMemory: return "Insufficient memory";
             case Status::InvalidState: return "Invalid operation for current state";
             case Status::ServiceUnavailable: return "VDD service not available";
+            case Status::RebootRequired: return "Reboot required";
             case Status::LeaseExpired: return "Session lease expired";
             case Status::ConcurrentAccess: return "Concurrent access not allowed";
             default: return "Unknown error";
@@ -615,7 +606,7 @@ namespace vdd {
         // Convert to absolute path
         wchar_t absPath[MAX_PATH];
         if (GetFullPathNameW(infPath.c_str(), MAX_PATH, absPath, nullptr) == 0) {
-            printf("[VDD] ERROR: GetFullPathNameW failed, error=%d\n", GetLastError());
+            printf("[VDD] ERROR: GetFullPathNameW failed, error=%d\n", ::GetLastError());
             SetLastError("Invalid INF path");
             return Status::InvalidArg;
         }
@@ -796,15 +787,16 @@ namespace vdd {
         
         printf("[VDD] ========================================\n");
         if (needReboot) {
-            printf("[VDD] SUCCESS: Driver installed (reboot may be required)\n");
-            SetLastError("Driver installed successfully (reboot may be required)");
+            printf("[VDD] SUCCESS: Driver installed (reboot required)\n");
+            SetLastError("Driver installed successfully (reboot required)");
+            printf("[VDD] ========================================\n");
+            return Status::RebootRequired;
         } else {
             printf("[VDD] SUCCESS: Driver installed\n");
             SetLastError("Driver installed successfully");
+            printf("[VDD] ========================================\n");
+            return Status::Ok;
         }
-        printf("[VDD] ========================================\n");
-        
-        return Status::Ok;
 
     ROLLBACK_WITH_LIST:
         printf("[VDD] *** ROLLBACK: Destroying driver info list ***\n");
@@ -882,6 +874,17 @@ namespace vdd {
             return Status::NotFound;
         }
         
+    // Collect INF names for Driver Store cleanup (before removing devices)
+    std::vector<std::wstring> infNamesToRemove;
+    for (const auto& devInfo : devicesToRemove) {
+        WCHAR infName[MAX_PATH] = {};
+        if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), 
+            SPDRP_DRIVER, nullptr, (BYTE*)infName, sizeof(infName), nullptr)) {
+            // SPDRP_DRIVER format: "oemXX.inf"
+            infNamesToRemove.push_back(infName);
+        }
+    }
+    
     // Remove each device
     int successCount = 0;
     int failCount = 0;
@@ -925,6 +928,23 @@ namespace vdd {
     }
         
             SetupDiDestroyDeviceInfoList(hDevInfo);
+        
+        // Clean up Driver Store (remove INF packages)
+        // This prevents accumulation of oem1.inf, oem2.inf, etc.
+        if (successCount > 0 && !infNamesToRemove.empty()) {
+            printf("[VDD] Cleaning up Driver Store packages...\n");
+            for (const auto& infName : infNamesToRemove) {
+                BOOL needReboot = FALSE;
+                printf("[VDD] Removing package: %ls\n", infName.c_str());
+                if (DiUninstallDriverW(nullptr, infName.c_str(), DIURFLAG_NO_REMOVE_INF, &needReboot)) {
+                    printf("[VDD] Successfully removed package: %ls\n", infName.c_str());
+                } else {
+                    DWORD err = ::GetLastError();
+                    printf("[VDD] WARNING: Failed to remove package %ls, error=%d\n", infName.c_str(), err);
+                    // Continue anyway - device is already removed
+                }
+            }
+        }
         
         // Report results
         std::string message = "Uninstall: " + std::to_string(successCount) + " device(s) removed";
