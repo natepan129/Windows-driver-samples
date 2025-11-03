@@ -49,6 +49,7 @@ set_target_properties(vddsdk PROPERTIES
 target_link_libraries(vddsdk
     PRIVATE
     setupapi
+    newdev
     dxgi
     d3d11
     advapi32
@@ -89,6 +90,7 @@ set_target_properties(vddsdk_static PROPERTIES
 target_link_libraries(vddsdk_static
     PRIVATE
     setupapi
+    newdev
     dxgi
     d3d11
     advapi32

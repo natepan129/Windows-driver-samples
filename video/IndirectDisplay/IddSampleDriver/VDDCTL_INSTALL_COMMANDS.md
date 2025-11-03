@@ -1,97 +1,97 @@
 # VDD Control Tool - Install Commands
 
-## 🚀 使用 vddctl.exe 安装 IddSampleDriver
+## 🚀 Using vddctl.exe to Install IddSampleDriver
 
 ---
 
-## 基本安装命令
+## Basic Installation Command
 
-### 命令格式
+### Command Format
 ```batch
-vddctl install --inf <INF文件路径>
+vddctl install --inf <INF file path>
 ```
 
-### 最简单的安装
+### Simplest Installation
 ```batch
 vddctl install --inf IddSampleDriver_Fixed.inf
 ```
 
 ---
 
-## ✅ 完整安装流程
+## ✅ Complete Installation Process
 
-### 方法 1: 手动逐步执行
+### Method 1: Manual Step-by-Step
 
 ```batch
-REM Step 1: 初始化 SDK
+REM Step 1: Initialize SDK
 vddctl init
 
-REM Step 2: 安装驱动（需要管理员权限，会弹出 UAC）
+REM Step 2: Install driver (requires administrator privileges, will show UAC)
 vddctl install --inf IddSampleDriver_Fixed.inf
 
-REM Step 3: 验证安装
+REM Step 3: Verify installation
 vddctl status
 ```
 
-### 方法 2: 使用脚本（推荐）
+### Method 2: Use Script (Recommended)
 
 ```batch
 cmd /c install_with_vddctl.bat
 ```
 
-### 方法 3: 使用管理员权限运行
+### Method 3: Run with Administrator Privileges
 
 ```batch
-REM 在 PowerShell 中以管理员身份运行
+REM Run as administrator in PowerShell
 powershell -Command "Start-Process -FilePath 'build\bin\Release\vddctl.exe' -ArgumentList 'install --inf IddSampleDriver_Fixed.inf' -Verb RunAs -Wait"
 ```
 
 ---
 
-## 📋 详细步骤
+## 📋 Detailed Steps
 
-### 1. 准备文件
+### 1. Prepare Files
 
-确保以下文件存在：
-- ✅ `build\bin\Release\vddctl.exe` (已编译的工具)
-- ✅ `IddSampleDriver_Fixed.inf` (驱动 INF 文件)
-- ✅ `x64\Release\IddSampleDriver.dll` (驱动 DLL)
+Ensure following files exist:
+- ✅ `build\bin\Release\vddctl.exe` (compiled tool)
+- ✅ `IddSampleDriver_Fixed.inf` (driver INF file)
+- ✅ `x64\Release\IddSampleDriver.dll` (driver DLL)
 
-### 2. 初始化 SDK
+### 2. Initialize SDK
 
 ```batch
 C:\Path\To\Project> vddctl init
 ```
 
-**输出**:
+**Output**:
 ```
 Initializing VDD SDK...
 VDD SDK initialized successfully.
 ```
 
-### 3. 安装驱动
+### 3. Install Driver
 
 ```batch
 C:\Path\To\Project> vddctl install --inf IddSampleDriver_Fixed.inf
 ```
 
-**输出**:
+**Output**:
 ```
 Installing driver...
 Driver installed successfully.
 ```
 
-⚠️ **注意**: 
-- 会弹出 UAC 提示，点击 "是" 允许
-- 如果已有旧设备，会自动更新
+⚠️ **Note**: 
+- Will show UAC prompt, click "Yes" to allow
+- If old device exists, will automatically update
 
-### 4. 验证安装
+### 4. Verify Installation
 
 ```batch
 C:\Path\To\Project> vddctl status
 ```
 
-**成功的输出**:
+**Successful Output**:
 ```
 VDD SDK Status:
 ==============
@@ -103,34 +103,34 @@ System Info: Windows 10/11 x64
 
 ---
 
-## 🔍 验证安装成功
+## 🔍 Verify Installation Success
 
-### 使用 vddctl 检查
+### Check with vddctl
 ```batch
 vddctl status
 ```
-应该显示: `Driver Installed: Yes`
+Should display: `Driver Installed: Yes`
 
-### 使用 PowerShell 检查
+### Check with PowerShell
 ```powershell
 Get-PnpDevice | Where-Object { $_.FriendlyName -like '*IddSampleDriver*' }
 ```
 
-**成功的输出**:
+**Successful Output**:
 ```
 FriendlyName           Status Class   ClassGuid
 ------------           ------ -----   ---------
 IddSampleDriver Device OK     Display {4d36e968-e325-11ce-bfc1-08002be10318}
 ```
 
-### 在 Device Manager 中检查
-1. 按 `Win + X` 打开设备管理器
-2. 展开 "Display adapters" (显示适配器)
-3. 应该看到 "IddSampleDriver Device"
+### Check in Device Manager
+1. Press `Win + X` to open Device Manager
+2. Expand "Display adapters"
+3. Should see "IddSampleDriver Device"
 
 ---
 
-## 🛠️ 完整示例脚本
+## 🛠️ Complete Example Scripts
 
 ### simple_install.bat
 ```batch
@@ -173,113 +173,113 @@ pause
 
 ---
 
-## ❌ 常见错误和解决方案
+## ❌ Common Errors and Solutions
 
-### 错误 1: "vddctl.exe not found"
+### Error 1: "vddctl.exe not found"
 
-**原因**: vddctl 未编译
+**Cause**: vddctl not compiled
 
-**解决方案**:
+**Solution**:
 ```batch
 cmd /c compile_sdk_only.bat
 ```
 
-### 错误 2: "INF file not found"
+### Error 2: "INF file not found"
 
-**原因**: INF 路径不正确
+**Cause**: Incorrect INF path
 
-**解决方案**:
+**Solution**:
 ```batch
-REM 使用绝对路径
+REM Use absolute path
 vddctl install --inf "C:\Full\Path\To\IddSampleDriver_Fixed.inf"
 ```
 
-### 错误 3: "Access Denied" (错误 5)
+### Error 3: "Access Denied" (Error 5)
 
-**原因**: 没有管理员权限
+**Cause**: No administrator privileges
 
-**解决方案**:
+**Solution**:
 ```batch
-REM 右键点击 cmd/PowerShell，选择 "以管理员身份运行"
-REM 或使用 PowerShell 提升权限：
+REM Right-click cmd/PowerShell, select "Run as administrator"
+REM Or use PowerShell to elevate privileges:
 powershell -Command "Start-Process 'vddctl.exe' -ArgumentList 'install --inf IddSampleDriver_Fixed.inf' -Verb RunAs -Wait"
 ```
 
-### 错误 4: "Driver Installed: No" (安装后)
+### Error 4: "Driver Installed: No" (After Installation)
 
-**原因**: 安装可能失败
+**Cause**: Installation may have failed
 
-**解决方案**:
+**Solution**:
 ```batch
-REM 1. 检查 INF 文件编码（应该是 UTF-16 LE 或 ANSI）
-REM 2. 检查错误日志
+REM 1. Check INF file encoding (should be UTF-16 LE or ANSI)
+REM 2. Check error log
 vddctl install --inf IddSampleDriver_Fixed.inf
 
-REM 3. 验证文件
+REM 3. Verify files
 dir IddSampleDriver_Fixed.inf
 dir x64\Release\IddSampleDriver.dll
 ```
 
-### 错误 5: Device 没有 Display Class
+### Error 5: Device Has No Display Class
 
-**原因**: 
-- INF 文件错误
-- 使用了错误的 INF（UTF-8 vs UTF-16）
+**Cause**: 
+- INF file error
+- Used wrong INF (UTF-8 vs UTF-16)
 
-**解决方案**:
+**Solution**:
 ```batch
-REM 使用 IddSampleDriver_Fixed.inf (已验证可用)
+REM Use IddSampleDriver_Fixed.inf (verified working)
 vddctl uninstall
 vddctl install --inf IddSampleDriver_Fixed.inf
 ```
 
 ---
 
-## 📊 命令对比
+## 📊 Command Comparison
 
-| 操作 | install_driver.exe | vddctl.exe |
+| Operation | install_driver.exe | vddctl.exe |
 |------|-------------------|------------|
-| 安装命令 | `install_driver.exe IddSampleDriver_Fixed.inf` | `vddctl install --inf IddSampleDriver_Fixed.inf` |
-| 需要管理员 | ✅ Yes | ✅ Yes |
-| 支持查看状态 | ❌ No | ✅ Yes (`vddctl status`) |
-| 支持卸载 | ❌ No (需要 uninstall_driver.exe) | ✅ Yes (`vddctl uninstall`) |
-| 支持激活显示 | ❌ No | ✅ Yes (`vddctl activate`) |
-| 设计文档推荐 | ❌ No | ✅ Yes |
+| Install command | `install_driver.exe IddSampleDriver_Fixed.inf` | `vddctl install --inf IddSampleDriver_Fixed.inf` |
+| Requires admin | ✅ Yes | ✅ Yes |
+| View status support | ❌ No | ✅ Yes (`vddctl status`) |
+| Uninstall support | ❌ No (needs uninstall_driver.exe) | ✅ Yes (`vddctl uninstall`) |
+| Display activation support | ❌ No | ✅ Yes (`vddctl activate`) |
+| Design doc recommended | ❌ No | ✅ Yes |
 
-**推荐使用**: `vddctl.exe` (功能更完整，是设计文档的正式工具)
+**Recommended Use**: `vddctl.exe` (more complete functionality, official design doc tool)
 
 ---
 
-## 🎯 快速参考
+## 🎯 Quick Reference
 
-### 安装
+### Install
 ```batch
 vddctl install --inf IddSampleDriver_Fixed.inf
 ```
 
-### 卸载
+### Uninstall
 ```batch
 vddctl uninstall
 ```
 
-### 检查状态
+### Check Status
 ```batch
 vddctl status
 ```
 
-### 激活显示器
+### Activate Display
 ```batch
 vddctl activate --width 1920 --height 1080
 ```
 
-### 停用显示器
+### Deactivate Display
 ```batch
 vddctl deactivate
 ```
 
 ---
 
-## 📝 完整工作流程
+## 📝 Complete Workflow
 
 ```batch
 @echo off
@@ -318,9 +318,9 @@ pause
 
 ---
 
-## ⚡ 一键安装脚本
+## ⚡ One-Click Installation Script
 
-创建文件 `quick_install_vddctl.bat`:
+Create file `quick_install_vddctl.bat`:
 
 ```batch
 @echo off
@@ -335,16 +335,15 @@ echo Done!
 pause
 ```
 
-运行:
+Run:
 ```batch
 cmd /c quick_install_vddctl.bat
 ```
 
 ---
 
-## 🔗 相关文档
+## 🔗 Related Documentation
 
-- **完整命令参考**: `VDDCTL_COMMAND_REFERENCE.md`
-- **基本功能验证**: `VDDSDK_BASIC_VERIFICATION.md`
-- **测试脚本**: `install_with_vddctl.bat`
-
+- **Complete Command Reference**: `VDDCTL_COMMAND_REFERENCE.md`
+- **Basic Functionality Verification**: `VDDSDK_BASIC_VERIFICATION.md`
+- **Test Script**: `install_with_vddctl.bat`

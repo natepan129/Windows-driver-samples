@@ -1,72 +1,72 @@
-# VDD Control Tool (vddctl) - 命令参考
+# VDD Control Tool (vddctl) - Command Reference
 
-## 📋 概述
+## 📋 Overview
 
-`vddctl` 是 VDD SDK 的命令行工具，用于管理虚拟显示驱动。
+`vddctl` is the VDD SDK command-line tool for managing virtual display drivers.
 
-**位置**: `build\bin\Release\vddctl.exe`
+**Location**: `build\bin\Release\vddctl.exe`
 
 ---
 
-## 🚀 基本命令
+## 🚀 Basic Commands
 
-### 1. `init` - 初始化 SDK
+### 1. `init` - Initialize SDK
 
-初始化 VDD SDK，准备驱动管理环境。
+Initialize VDD SDK, prepare driver management environment.
 
-#### 语法
+#### Syntax
 ```bash
 vddctl init [--verbose]
 ```
 
-#### 选项
-- `--verbose`: 显示详细日志输出
+#### Options
+- `--verbose`: Display detailed log output
 
-#### 示例
+#### Examples
 ```batch
-REM 基本初始化
+REM Basic initialization
 vddctl init
 
-REM 详细日志初始化
+REM Detailed log initialization
 vddctl init --verbose
 ```
 
-#### 输出
+#### Output
 ```
 Initializing VDD SDK...
 VDD SDK initialized successfully.
 ```
 
-#### 返回值
-- `0`: 成功
-- `非0`: 失败（检查错误信息）
+#### Return Value
+- `0`: Success
+- `Non-zero`: Failed (check error message)
 
 ---
 
-### 2. `status` - 查看状态
+### 2. `status` - View Status
 
-显示 VDD SDK 和驱动的当前状态。
+Display current status of VDD SDK and driver.
 
-#### 语法
+#### Syntax
 ```bash
 vddctl status
 ```
 
-#### 示例
+#### Examples
 ```batch
 vddctl status
 ```
 
-#### 输出
+#### Output
 ```
 VDD SDK Status:
 ==============
 Driver Installed: Yes/No
 Display Active: Yes/No
-System Info: [系统信息]
+System Info: [system information]
 ```
 
-如果驱动已安装，还会显示：
+If driver is installed, will also display:
 ```
 Driver Version: 1.0.0
 Active Displays: 2
@@ -74,21 +74,21 @@ Active Displays: 2
 
 ---
 
-### 3. `version` - 查看版本
+### 3. `version` - View Version
 
-显示 VDD SDK 的版本信息。
+Display VDD SDK version information.
 
-#### 语法
+#### Syntax
 ```bash
 vddctl version
 ```
 
-#### 示例
+#### Examples
 ```batch
 vddctl version
 ```
 
-#### 输出
+#### Output
 ```
 VDD SDK Version: 1.0.0
 Build Date: Oct 27 2025 14:24:13
@@ -96,104 +96,104 @@ Build Date: Oct 27 2025 14:24:13
 
 ---
 
-### 4. `install` - 安装驱动
+### 4. `install` - Install Driver
 
-安装虚拟显示驱动到系统。
+Install virtual display driver to system.
 
-#### 语法
+#### Syntax
 ```bash
-vddctl install --inf <INF文件路径>
+vddctl install --inf <INF file path>
 ```
 
-#### 选项
-- `--inf <path>`: INF 文件的完整路径（必需）
+#### Options
+- `--inf <path>`: Full path to INF file (required)
 
-#### 示例
+#### Examples
 ```batch
-REM 使用相对路径
+REM Use relative path
 vddctl install --inf IddSampleDriver_Fixed.inf
 
-REM 使用绝对路径
+REM Use absolute path
 vddctl install --inf "C:\Path\To\IddSampleDriver_Fixed.inf"
 ```
 
-#### 输出
+#### Output
 ```
 Installing driver...
 Driver installed successfully.
 ```
 
-#### 注意事项
-- ⚠️ **需要管理员权限**（会弹出 UAC 提示）
-- 使用 `IddSampleDriver_Fixed.inf`（UTF-8 编码）
-- DLL 来自 `x64\Release\IddSampleDriver.dll`
+#### Notes
+- ⚠️ **Requires administrator privileges** (will show UAC prompt)
+- Use `IddSampleDriver_Fixed.inf` (UTF-8 encoding)
+- DLL from `x64\Release\IddSampleDriver.dll`
 
 ---
 
-### 5. `uninstall` - 卸载驱动
+### 5. `uninstall` - Uninstall Driver
 
-从系统中卸载虚拟显示驱动。
+Uninstall virtual display driver from system.
 
-#### 语法
+#### Syntax
 ```bash
 vddctl uninstall
 ```
 
-#### 示例
+#### Examples
 ```batch
 vddctl uninstall
 ```
 
-#### 输出
+#### Output
 ```
 Uninstalling driver...
 Driver uninstalled successfully.
 ```
 
-#### 注意事项
-- ⚠️ **需要管理员权限**
-- 会移除所有 IddSampleDriver 设备
-- 会清理相关注册表项
+#### Notes
+- ⚠️ **Requires administrator privileges**
+- Will remove all IddSampleDriver devices
+- Will cleanup related registry entries
 
 ---
 
-### 6. `activate` - 激活虚拟显示器
+### 6. `activate` - Activate Virtual Display
 
-创建并激活虚拟显示器。
+Create and activate virtual display.
 
-#### 语法
+#### Syntax
 ```bash
-vddctl activate [选项]
+vddctl activate [options]
 ```
 
-#### 选项
-- `--name <名称>`: 显示器名称（默认："Virtual Display"）
-- `--width <宽度>`: 宽度（默认：1920）
-- `--height <高度>`: 高度（默认：1080）
-- `--refresh <刷新率>`: 刷新率（默认：60）
-- `--count <数量>`: 创建数量（默认：1）
-- `--hdr`: 启用 HDR10
-- `--stereo`: 启用立体显示
+#### Options
+- `--name <name>`: Display name (default: "Virtual Display")
+- `--width <width>`: Width (default: 1920)
+- `--height <height>`: Height (default: 1080)
+- `--refresh <rate>`: Refresh rate (default: 60)
+- `--count <number>`: Number to create (default: 1)
+- `--hdr`: Enable HDR10
+- `--stereo`: Enable stereo display
 
-#### 示例
+#### Examples
 ```batch
-REM 基本激活（1920x1080 @ 60Hz）
+REM Basic activation (1920x1080 @ 60Hz)
 vddctl activate
 
-REM 自定义分辨率
+REM Custom resolution
 vddctl activate --width 2560 --height 1440 --refresh 75
 
-REM 创建多个显示器
+REM Create multiple displays
 vddctl activate --width 1920 --height 1080 --count 2
 
-REM 启用 HDR
+REM Enable HDR
 vddctl activate --width 3840 --height 2160 --hdr
 
-REM 自定义名称
+REM Custom name
 vddctl activate --name "My Virtual Display" --width 1920 --height 1080
 ```
 
-#### 输出
+#### Output
 ```
 Activating virtual display...
 Virtual display activated successfully.
@@ -205,21 +205,21 @@ Count: 1
 
 ---
 
-### 7. `deactivate` - 停用虚拟显示器
+### 7. `deactivate` - Deactivate Virtual Display
 
-移除所有虚拟显示器。
+Remove all virtual displays.
 
-#### 语法
+#### Syntax
 ```bash
 vddctl deactivate
 ```
 
-#### 示例
+#### Examples
 ```batch
 vddctl deactivate
 ```
 
-#### 输出
+#### Output
 ```
 Deactivating virtual display...
 Virtual display deactivated successfully.
@@ -227,34 +227,34 @@ Virtual display deactivated successfully.
 
 ---
 
-### 8. `setmode` - 设置显示模式
+### 8. `setmode` - Set Display Mode
 
-更改虚拟显示器的分辨率和刷新率。
+Change resolution and refresh rate of virtual display.
 
-#### 语法
+#### Syntax
 ```bash
-vddctl setmode --index <索引> --width <宽度> --height <高度> [--refresh <刷新率>]
+vddctl setmode --index <index> --width <width> --height <height> [--refresh <rate>]
 ```
 
-#### 选项
-- `--index <n>`: 显示器索引（0-based）
-- `--width <宽度>`: 新宽度
-- `--height <高度>`: 新高度
-- `--refresh <刷新率>`: 新刷新率（默认：60）
+#### Options
+- `--index <n>`: Display index (0-based)
+- `--width <width>`: New width
+- `--height <height>`: New height
+- `--refresh <rate>`: New refresh rate (default: 60)
 
-#### 示例
+#### Examples
 ```batch
-REM 更改第一个显示器为 2560x1440 @ 60Hz
+REM Change first display to 2560x1440 @ 60Hz
 vddctl setmode --index 0 --width 2560 --height 1440
 
-REM 更改刷新率
+REM Change refresh rate
 vddctl setmode --index 0 --width 1920 --height 1080 --refresh 120
 
-REM 更改第二个显示器
+REM Change second display
 vddctl setmode --index 1 --width 3840 --height 2160 --refresh 60
 ```
 
-#### 输出
+#### Output
 ```
 Setting display mode...
 Display mode set successfully.
@@ -265,35 +265,35 @@ Refresh Rate: 75Hz
 
 ---
 
-### 9. `setlocation` - 设置显示位置
+### 9. `setlocation` - Set Display Location
 
-设置虚拟显示器在桌面拓扑中的位置。
+Set position of virtual display in desktop topology.
 
-#### 语法
+#### Syntax
 ```bash
-vddctl setlocation --index <索引> --x <X坐标> --y <Y坐标> --width <宽度> --height <高度>
+vddctl setlocation --index <index> --x <X coordinate> --y <Y coordinate> --width <width> --height <height>
 ```
 
-#### 选项
-- `--index <n>`: 显示器索引
-- `--x <坐标>`: X 位置
-- `--y <坐标>`: Y 位置
-- `--width <宽度>`: 宽度
-- `--height <高度>`: 高度
+#### Options
+- `--index <n>`: Display index
+- `--x <coordinate>`: X position
+- `--y <coordinate>`: Y position
+- `--width <width>`: Width
+- `--height <height>`: Height
 
-#### 示例
+#### Examples
 ```batch
-REM 将显示器放在主显示器右侧
+REM Place display to right of main display
 vddctl setlocation --index 0 --x 1920 --y 0 --width 1920 --height 1080
 
-REM 将显示器放在上方
+REM Place display above
 vddctl setlocation --index 0 --x 0 --y -1080 --width 1920 --height 1080
 
-REM 多显示器布局
+REM Multi-display layout
 vddctl setlocation --index 1 --x 3840 --y 0 --width 2560 --height 1440
 ```
 
-#### 输出
+#### Output
 ```
 Setting display location...
 Display location set successfully.
@@ -304,53 +304,53 @@ Size: 1920x1080
 
 ---
 
-### 10. `setprimary` - 设置主显示器
+### 10. `setprimary` - Set Primary Display
 
-将虚拟显示器设置为主显示器。
+Set virtual display as primary display.
 
-#### 语法
+#### Syntax
 ```bash
-vddctl setprimary --index <索引>
+vddctl setprimary --index <index>
 ```
 
-#### 选项
-- `--index <n>`: 要设为主显示器的索引
+#### Options
+- `--index <n>`: Index to set as primary display
 
-#### 示例
+#### Examples
 ```batch
-REM 将第一个虚拟显示器设为主显示器
+REM Set first virtual display as primary
 vddctl setprimary --index 0
 
-REM 将第二个虚拟显示器设为主显示器
+REM Set second virtual display as primary
 vddctl setprimary --index 1
 ```
 
-#### 输出
+#### Output
 ```
 Setting primary display...
 Primary display set successfully.
 Index: 0
 ```
 
-⚠️ **注意**: 这会影响所有应用程序的默认显示位置
+⚠️ **Note**: This will affect default display position for all applications
 
 ---
 
-### 11. `list` - 列出显示器
+### 11. `list` - List Displays
 
-列出所有显示器和适配器信息。
+List all displays and adapter information.
 
-#### 语法
+#### Syntax
 ```bash
 vddctl list
 ```
 
-#### 示例
+#### Examples
 ```batch
 vddctl list
 ```
 
-#### 输出
+#### Output
 ```
 Listing displays and adapters...
 
@@ -366,21 +366,21 @@ Displays:
 
 ---
 
-### 12. `shutdown` - 关闭 SDK
+### 12. `shutdown` - Shutdown SDK
 
-关闭 VDD SDK，释放资源。
+Shutdown VDD SDK, release resources.
 
-#### 语法
+#### Syntax
 ```bash
 vddctl shutdown
 ```
 
-#### 示例
+#### Examples
 ```batch
 vddctl shutdown
 ```
 
-#### 输出
+#### Output
 ```
 Shutting down VDD SDK...
 VDD SDK shutdown successfully.
@@ -388,74 +388,74 @@ VDD SDK shutdown successfully.
 
 ---
 
-### 13. `help` - 显示帮助
+### 13. `help` - Display Help
 
-显示命令帮助信息。
+Display command help information.
 
-#### 语法
+#### Syntax
 ```bash
 vddctl help
 ```
 
-#### 示例
+#### Examples
 ```batch
 vddctl help
 ```
 
 ---
 
-## 📝 完整工作流程示例
+## 📝 Complete Workflow Examples
 
-### 示例 1: 基本安装和激活
+### Example 1: Basic Installation and Activation
 
 ```batch
 @echo off
 
-REM 1. 初始化 SDK
+REM 1. Initialize SDK
 vddctl init
 
-REM 2. 检查状态
+REM 2. Check status
 vddctl status
 
-REM 3. 安装驱动（需要管理员权限）
+REM 3. Install driver (requires administrator privileges)
 vddctl install --inf IddSampleDriver_Fixed.inf
 
-REM 4. 激活虚拟显示器
+REM 4. Activate virtual display
 vddctl activate --width 1920 --height 1080
 
-REM 5. 查看显示器列表
+REM 5. View display list
 vddctl list
 
-REM 6. 停用虚拟显示器
+REM 6. Deactivate virtual display
 vddctl deactivate
 
-REM 7. 卸载驱动
+REM 7. Uninstall driver
 vddctl uninstall
 ```
 
-### 示例 2: 创建多显示器布局
+### Example 2: Create Multi-Display Layout
 
 ```batch
 @echo off
 
-REM 初始化
+REM Initialize
 vddctl init
 vddctl install --inf IddSampleDriver_Fixed.inf
 
-REM 创建两个虚拟显示器
+REM Create two virtual displays
 vddctl activate --width 1920 --height 1080 --count 2
 
-REM 设置第一个显示器（主显示器右侧）
+REM Set first display (right of main display)
 vddctl setlocation --index 0 --x 1920 --y 0 --width 1920 --height 1080
 
-REM 设置第二个显示器（第一个虚拟显示器右侧）
+REM Set second display (right of first virtual display)
 vddctl setlocation --index 1 --x 3840 --y 0 --width 1920 --height 1080
 
-REM 查看布局
+REM View layout
 vddctl list
 ```
 
-### 示例 3: 测试不同分辨率
+### Example 3: Test Different Resolutions
 
 ```batch
 @echo off
@@ -463,17 +463,17 @@ vddctl list
 vddctl init
 vddctl install --inf IddSampleDriver_Fixed.inf
 
-REM 测试 1080p
+REM Test 1080p
 vddctl activate --width 1920 --height 1080
 timeout /t 5
 vddctl deactivate
 
-REM 测试 1440p
+REM Test 1440p
 vddctl activate --width 2560 --height 1440
 timeout /t 5
 vddctl deactivate
 
-REM 测试 4K
+REM Test 4K
 vddctl activate --width 3840 --height 2160
 timeout /t 5
 vddctl deactivate
@@ -481,74 +481,73 @@ vddctl deactivate
 
 ---
 
-## ⚠️ 重要注意事项
+## ⚠️ Important Notes
 
-1. **管理员权限**
-   - `install` 和 `uninstall` 命令需要管理员权限
-   - 使用 `powershell Start-Process -Verb RunAs` 提升权限
+1. **Administrator Privileges**
+   - `install` and `uninstall` commands require administrator privileges
+   - Use `powershell Start-Process -Verb RunAs` to elevate privileges
 
-2. **INF 文件**
-   - 使用 `IddSampleDriver_Fixed.inf`（UTF-8 编码，已验证）
-   - 与 `x64\Release\IddSampleDriver.dll` 配合使用
-   - 不需要每次重新 build
+2. **INF File**
+   - Use `IddSampleDriver_Fixed.inf` (UTF-8 encoding, verified)
+   - Works with `x64\Release\IddSampleDriver.dll`
+   - No need to rebuild every time
 
-3. **驱动状态**
-   - 使用 `vddctl status` 检查当前状态
-   - 使用 `vddctl list` 查看所有显示器
+3. **Driver Status**
+   - Use `vddctl status` to check current status
+   - Use `vddctl list` to view all displays
 
-4. **错误处理**
-   - 如果命令失败，查看输出的错误信息
-   - 使用 `--verbose` 获取详细日志
+4. **Error Handling**
+   - If command fails, check output error message
+   - Use `--verbose` to get detailed logs
 
 ---
 
-## 🔧 故障排除
+## 🔧 Troubleshooting
 
-### 问题: "Driver Installed: No"
+### Problem: "Driver Installed: No"
 
-**解决方案**:
+**Solution**:
 ```batch
-REM 确保使用管理员权限
+REM Ensure using administrator privileges
 powershell -Command "Start-Process 'vddctl.exe' -ArgumentList 'install --inf IddSampleDriver_Fixed.inf' -Verb RunAs -Wait"
 ```
 
-### 问题: "Display Active: No"
+### Problem: "Display Active: No"
 
-**原因**: 驱动未安装或未初始化
+**Reason**: Driver not installed or not initialized
 
-**解决方案**:
+**Solution**:
 ```batch
 vddctl init
 vddctl install --inf IddSampleDriver_Fixed.inf
 vddctl activate --width 1920 --height 1080
 ```
 
-### 问题: "Failed to enumerate adapters"
+### Problem: "Failed to enumerate adapters"
 
-**原因**: SDK 未初始化
+**Reason**: SDK not initialized
 
-**解决方案**:
+**Solution**:
 ```batch
 vddctl init
 ```
 
 ---
 
-## 📊 命令快速参考
+## 📊 Command Quick Reference
 
-| 命令 | 需要管理员 | 主要用途 |
-|------|-----------|---------|
-| `init` | ❌ | 初始化 SDK |
-| `status` | ❌ | 查看状态 |
-| `version` | ❌ | 查看版本 |
-| `install` | ✅ | 安装驱动 |
-| `uninstall` | ✅ | 卸载驱动 |
-| `activate` | ❌ | 创建虚拟显示器 |
-| `deactivate` | ❌ | 移除虚拟显示器 |
-| `setmode` | ❌ | 更改分辨率 |
-| `setlocation` | ❌ | 设置位置 |
-| `setprimary` | ❌ | 设为主显示器 |
-| `list` | ❌ | 列出显示器 |
-| `shutdown` | ❌ | 关闭 SDK |
-| `help` | ❌ | 显示帮助 |
-
+| Command | Requires Admin | Main Purpose |
+|---------|---------------|-------------|
+| `init` | ❌ | Initialize SDK |
+| `status` | ❌ | View status |
+| `version` | ❌ | View version |
+| `install` | ✅ | Install driver |
+| `uninstall` | ✅ | Uninstall driver |
+| `activate` | ❌ | Create virtual display |
+| `deactivate` | ❌ | Remove virtual display |
+| `setmode` | ❌ | Change resolution |
+| `setlocation` | ❌ | Set position |
+| `setprimary` | ❌ | Set as primary display |
+| `list` | ❌ | List displays |
+| `shutdown` | ❌ | Shutdown SDK |
+| `help` | ❌ | Display help |

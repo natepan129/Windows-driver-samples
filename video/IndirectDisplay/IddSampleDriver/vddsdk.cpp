@@ -90,6 +90,7 @@ namespace vdd {
         SdkConfig m_config;
         std::string m_lastError;
         std::mutex m_mutex;
+        std::mutex m_installMutex;  // Separate lock for install/uninstall operations
         
         // Display state management
         bool m_isActive;
@@ -113,6 +114,25 @@ namespace vdd {
         Status ValidateOutputIndex(uint32_t outputIndex);
         Status CheckServiceAvailability();
     };
+
+    // ============================================================================
+    // Helper Functions
+    // ============================================================================
+
+    static bool IsRunningAsAdministrator() {
+        BOOL isAdmin = FALSE;
+        PSID adminGroup = NULL;
+        SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+        
+        if (AllocateAndInitializeSid(&ntAuthority, 2, 
+            SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
+            0, 0, 0, 0, 0, 0, &adminGroup)) {
+            CheckTokenMembership(NULL, adminGroup, &isAdmin);
+            FreeSid(adminGroup);
+        }
+        
+        return isAdmin == TRUE;
+    }
 
     // ============================================================================
     // Global SDK Instance
@@ -162,8 +182,10 @@ namespace vdd {
     Status InstallDriver(const std::wstring& infPath) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
+        // InstallDriver doesn't need SDK instance - it's a standalone operation
+        // Create temporary instance if needed
         if (!g_sdkInstance) {
-            return Status::NotInstalled;
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
         }
 
         return g_sdkInstance->InstallDriver(infPath);
@@ -172,8 +194,10 @@ namespace vdd {
     Status UninstallDriver() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
+        // UninstallDriver doesn't need SDK instance - it's a standalone operation
+        // Create temporary instance if needed
         if (!g_sdkInstance) {
-            return Status::NotInstalled;
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
         }
 
         return g_sdkInstance->UninstallDriver();
@@ -504,20 +528,6 @@ namespace vdd {
         }
     }
 
-    bool IsRunningAsAdministrator() {
-        BOOL isAdmin = FALSE;
-        PSID adminGroup = nullptr;
-        SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
-
-        if (AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
-            DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &adminGroup)) {
-            CheckTokenMembership(nullptr, adminGroup, &isAdmin);
-            FreeSid(adminGroup);
-        }
-
-        return isAdmin == TRUE;
-    }
-
     bool RequestElevation() {
         // This is a simplified implementation
         // In a real implementation, you would use ShellExecute with "runas"
@@ -580,138 +590,177 @@ namespace vdd {
     // These would contain the actual implementation logic
 
     Status VddSdkImpl::InstallDriver(const std::wstring& infPath) {
-        // PROPER SETUPAPI METHOD: Create device, select driver from INF, install
-        // This avoids creating duplicate devices with UpdateDriverForPlugAndPlayDevicesW
+        std::lock_guard<std::mutex> lock(m_installMutex);
         
+        // Validation
         if (infPath.empty()) {
-            SetLastError("Driver INF path cannot be empty");
+            SetLastError("INF path cannot be empty");
             return Status::InvalidArg;
         }
         
-        // Check if file exists
-        if (GetFileAttributesW(infPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-            SetLastError("Driver INF file not found: " + std::string(infPath.begin(), infPath.end()));
+        // Convert to absolute path
+        wchar_t absPath[MAX_PATH];
+        if (GetFullPathNameW(infPath.c_str(), MAX_PATH, absPath, nullptr) == 0) {
+            SetLastError("Invalid INF path");
             return Status::InvalidArg;
         }
         
-        // Display adapter class GUID
+        if (GetFileAttributesW(absPath) == INVALID_FILE_ATTRIBUTES) {
+            SetLastError("INF file not found");
+            return Status::InvalidArg;
+        }
+        
+        // Check admin
+        if (!IsRunningAsAdministrator()) {
+            SetLastError("Administrator privileges required");
+            return Status::AdminRequired;
+        }
+        
+        // Check if device already exists
         GUID displayClassGuid = { 0x4D36E968, 0xE325, 0x11CE, 
             { 0xBF, 0xC1, 0x08, 0x00, 0x2B, 0xE1, 0x03, 0x18 } };
         
-        HDEVINFO deviceInfoSet = INVALID_HANDLE_VALUE;
-        SP_DEVINFO_DATA devInfoData = {};
-        SP_DEVINSTALL_PARAMS_W installParams = {};
+        {
+            HDEVINFO hCheck = SetupDiGetClassDevsW(&displayClassGuid, nullptr, nullptr, DIGCF_ALLCLASSES);
+            if (hCheck != INVALID_HANDLE_VALUE) {
+                SP_DEVINFO_DATA dev{}; dev.cbSize = sizeof(dev);
+                for (DWORD i = 0; SetupDiEnumDeviceInfo(hCheck, i, &dev); ++i) {
+                    WCHAR hwid[4096] = {};
+                    if (SetupDiGetDeviceRegistryPropertyW(hCheck, &dev, SPDRP_HARDWAREID,
+                        nullptr, (BYTE*)hwid, sizeof(hwid), nullptr)) {
+                        for (wchar_t* p = hwid; *p; p += wcslen(p) + 1) {
+                            if (_wcsicmp(p, L"ROOT\\IddSampleDriver") == 0) {
+                                SetupDiDestroyDeviceInfoList(hCheck);
+                                SetLastError("Device already installed");
+                                return Status::AlreadyInstalled;
+                            }
+                        }
+                    }
+                }
+                SetupDiDestroyDeviceInfoList(hCheck);
+            }
+        }
         
-        // Step 1: Create device info list
-        deviceInfoSet = SetupDiCreateDeviceInfoList(&displayClassGuid, nullptr);
-        if (deviceInfoSet == INVALID_HANDLE_VALUE) {
-            DWORD error = ::GetLastError();
-            SetLastError("Failed to create device info list: " + std::to_string(error));
+        // Stage INF to Driver Store
+        BOOL needReboot = FALSE;
+        if (!DiInstallDriverW(nullptr, absPath, DIIRFLAG_FORCE_INF, &needReboot)) {
+            DWORD err = ::GetLastError();
+            SetLastError("Failed to stage INF to Driver Store: " + std::to_string(err));
             return Status::DriverError;
         }
         
-        // Step 2: Create device info
+        // Create device info list
+        HDEVINFO hDevInfo = SetupDiCreateDeviceInfoList(&displayClassGuid, nullptr);
+        if (hDevInfo == INVALID_HANDLE_VALUE) {
+            SetLastError("Failed to create device info list: " + std::to_string(::GetLastError()));
+            return Status::DriverError;
+        }
+        
+        // Create device info
+        SP_DEVINFO_DATA devInfoData = {};
         devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
         
-        if (!SetupDiCreateDeviceInfoW(
-                deviceInfoSet,
-                L"IddSampleDriver",
-                &displayClassGuid,
-                L"IddSampleDriver Device",
-                nullptr,
-                DICD_GENERATE_ID,
-                &devInfoData)) {
-            DWORD error = ::GetLastError();
-            SetLastError("Failed to create device info: " + std::to_string(error));
-            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+        if (!SetupDiCreateDeviceInfoW(hDevInfo, L"IddSampleDriver", &displayClassGuid,
+            L"IddSampleDriver Device", nullptr, DICD_GENERATE_ID, &devInfoData)) {
+            DWORD err = ::GetLastError();
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            SetLastError("Failed to create device info: " + std::to_string(err));
             return Status::DriverError;
         }
         
-        // Step 3: Set hardware ID
-        wchar_t hardwareId[] = L"ROOT\\IddSampleDriver\0\0";
-        
-        if (!SetupDiSetDeviceRegistryPropertyW(
-                deviceInfoSet,
-                &devInfoData,
-                SPDRP_HARDWAREID,
-                (const BYTE*)hardwareId,
-                sizeof(hardwareId))) {
-            DWORD error = ::GetLastError();
-            SetLastError("Failed to set hardware ID: " + std::to_string(error));
-            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+        // Set HWID
+        wchar_t hwid[] = L"ROOT\\IddSampleDriver\0\0";
+        if (!SetupDiSetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
+            (const BYTE*)hwid, sizeof(hwid))) {
+            DWORD err = ::GetLastError();
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            SetLastError("Failed to set hardware ID: " + std::to_string(err));
             return Status::DriverError;
         }
         
-        // Step 4: Register device (creates device node)
-        if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, deviceInfoSet, &devInfoData)) {
-            DWORD error = ::GetLastError();
-            SetLastError("Failed to register device: " + std::to_string(error));
-            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+        // Register device
+        if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, hDevInfo, &devInfoData)) {
+            DWORD err = ::GetLastError();
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            SetLastError("Failed to register device: " + std::to_string(err));
             return Status::DriverError;
         }
         
-        // Step 5: Set device install params to use specific INF
+        // Set install params
+        SP_DEVINSTALL_PARAMS_W installParams = {};
         installParams.cbSize = sizeof(SP_DEVINSTALL_PARAMS_W);
-        if (!SetupDiGetDeviceInstallParamsW(deviceInfoSet, &devInfoData, &installParams)) {
-            DWORD error = ::GetLastError();
-            SetLastError("Failed to get install params: " + std::to_string(error));
-            SetupDiDestroyDeviceInfoList(deviceInfoSet);
-            return Status::DriverError;
+        
+        if (!SetupDiGetDeviceInstallParamsW(hDevInfo, &devInfoData, &installParams)) {
+            goto ROLLBACK;
         }
         
-        wcscpy_s(installParams.DriverPath, infPath.c_str());
-        installParams.Flags |= DI_ENUMSINGLEINF;  // Use only this INF
+        wcsncpy_s(installParams.DriverPath, _countof(installParams.DriverPath), absPath, _TRUNCATE);
+        installParams.Flags |= DI_ENUMSINGLEINF;
         
-        if (!SetupDiSetDeviceInstallParamsW(deviceInfoSet, &devInfoData, &installParams)) {
-            DWORD error = ::GetLastError();
-            SetLastError("Failed to set install params: " + std::to_string(error));
-            SetupDiDestroyDeviceInfoList(deviceInfoSet);
-            return Status::DriverError;
+        if (!SetupDiSetDeviceInstallParamsW(hDevInfo, &devInfoData, &installParams)) {
+            goto ROLLBACK;
         }
         
-        // Step 6: Build driver list from INF
-        if (!SetupDiBuildDriverInfoList(deviceInfoSet, &devInfoData, SPDIT_CLASSDRIVER)) {
-            DWORD error = ::GetLastError();
-            SetLastError("Failed to build driver info list: " + std::to_string(error));
-            SetupDiDestroyDeviceInfoList(deviceInfoSet);
-            return Status::DriverError;
+        // Build driver list (COMPATDRIVER instead of CLASSDRIVER)
+        if (!SetupDiBuildDriverInfoList(hDevInfo, &devInfoData, SPDIT_COMPATDRIVER)) {
+            goto ROLLBACK;
         }
         
-        // Step 7: Select best compatible driver
-        if (!SetupDiCallClassInstaller(DIF_SELECTBESTCOMPATDRV, deviceInfoSet, &devInfoData)) {
-            DWORD error = ::GetLastError();
-            SetLastError("Failed to select driver: " + std::to_string(error));
-            SetupDiDestroyDriverInfoList(deviceInfoSet, &devInfoData, SPDIT_CLASSDRIVER);
-            SetupDiDestroyDeviceInfoList(deviceInfoSet);
-            return Status::DriverError;
+        // Select best compatible driver
+        if (!SetupDiCallClassInstaller(DIF_SELECTBESTCOMPATDRV, hDevInfo, &devInfoData)) {
+            goto ROLLBACK_WITH_LIST;
         }
         
-        // Step 8: Install the selected driver to the device
-        if (!SetupDiCallClassInstaller(DIF_INSTALLDEVICE, deviceInfoSet, &devInfoData)) {
-            DWORD error = ::GetLastError();
-            SetLastError("Failed to install device: " + std::to_string(error));
-            SetupDiDestroyDriverInfoList(deviceInfoSet, &devInfoData, SPDIT_CLASSDRIVER);
-            SetupDiDestroyDeviceInfoList(deviceInfoSet);
-            return Status::DriverError;
+        // Install device
+        if (!SetupDiCallClassInstaller(DIF_INSTALLDEVICE, hDevInfo, &devInfoData)) {
+            goto ROLLBACK_WITH_LIST;
         }
         
         // Cleanup
-        SetupDiDestroyDriverInfoList(deviceInfoSet, &devInfoData, SPDIT_CLASSDRIVER);
-        SetupDiDestroyDeviceInfoList(deviceInfoSet);
+        SetupDiDestroyDriverInfoList(hDevInfo, &devInfoData, SPDIT_COMPATDRIVER);
+        SetupDiDestroyDeviceInfoList(hDevInfo);
         
-        SetLastError("Driver installed successfully");
+        if (needReboot) {
+            SetLastError("Driver installed successfully (reboot may be required)");
+        } else {
+            SetLastError("Driver installed successfully");
+        }
+        
         return Status::Ok;
+
+    ROLLBACK_WITH_LIST:
+        SetupDiDestroyDriverInfoList(hDevInfo, &devInfoData, SPDIT_COMPATDRIVER);
+        
+    ROLLBACK:
+        {
+            DWORD lastErr = ::GetLastError();
+            
+            // Remove the device node we just created
+            SP_REMOVEDEVICE_PARAMS removeParams = {};
+            removeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
+            removeParams.ClassInstallHeader.InstallFunction = DIF_REMOVE;
+            removeParams.Scope = DI_REMOVEDEVICE_GLOBAL;
+            removeParams.HwProfile = 0;
+            
+            SetupDiSetClassInstallParamsW(hDevInfo, &devInfoData,
+                reinterpret_cast<SP_CLASSINSTALL_HEADER*>(&removeParams), sizeof(removeParams));
+            SetupDiCallClassInstaller(DIF_REMOVE, hDevInfo, &devInfoData);
+            
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            
+            SetLastError("Installation failed (rolled back): " + std::to_string(lastErr));
+            return Status::DriverError;
+        }
     }
 
     Status VddSdkImpl::UninstallDriver() {
-        // SAFE UNINSTALL - Find and remove ALL IddSampleDriver devices
-        // Search both InstanceId and FriendlyName to avoid missing devices
+        std::lock_guard<std::mutex> lock(m_installMutex);
         
         GUID displayClassGuid = { 0x4D36E968, 0xE325, 0x11CE, 
             { 0xBF, 0xC1, 0x08, 0x00, 0x2B, 0xE1, 0x03, 0x18 } };
         
         HDEVINFO hDevInfo = SetupDiGetClassDevsW(&displayClassGuid, nullptr, nullptr, 
-            DIGCF_PRESENT | DIGCF_ALLCLASSES);
+            DIGCF_ALLCLASSES);  // Removed DIGCF_PRESENT to find offline/phantom devices
         
         if (hDevInfo == INVALID_HANDLE_VALUE) {
             SetLastError("Failed to get display device information: " + std::to_string(::GetLastError()));
@@ -725,27 +774,21 @@ namespace vdd {
         
         DWORD deviceIndex = 0;
         while (SetupDiEnumDeviceInfo(hDevInfo, deviceIndex, &devInfoData)) {
-            WCHAR deviceId[MAX_PATH] = {};
-            WCHAR deviceDesc[MAX_PATH] = {};
+            WCHAR hwid[4096] = {};
             bool isOurDevice = false;
             
-            // Get Instance ID
-            if (SetupDiGetDeviceInstanceIdW(hDevInfo, &devInfoData, deviceId, MAX_PATH, nullptr)) {
-                // Get FriendlyName/Description
-                SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_DEVICEDESC,
-                    nullptr, (BYTE*)deviceDesc, sizeof(deviceDesc), nullptr);
+            // Get Hardware ID (HWID) - more reliable than InstanceId
+            if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
+                nullptr, (BYTE*)hwid, sizeof(hwid), nullptr)) {
                 
-                // Check if it's our driver (InstanceId OR FriendlyName contains "IddSampleDriver")
-                std::wstring deviceIdStr(deviceId);
-                std::wstring deviceDescStr(deviceDesc);
-                
-                if (deviceIdStr.find(L"IddSampleDriver") != std::wstring::npos ||
-                    deviceIdStr.find(L"IDDSAMPLEDRIVER") != std::wstring::npos ||
-                    deviceDescStr.find(L"IddSampleDriver") != std::wstring::npos ||
-                    deviceDescStr.find(L"IDDSAMPLEDRIVER") != std::wstring::npos) {
-                    
-                    isOurDevice = true;
-                    devicesToRemove.push_back(devInfoData);
+                // HWID is a multi-string (REG_MULTI_SZ), iterate through each string
+                for (wchar_t* p = hwid; *p; p += wcslen(p) + 1) {
+                    // Exact case-insensitive match
+                    if (_wcsicmp(p, L"ROOT\\IddSampleDriver") == 0) {
+                        isOurDevice = true;
+                        devicesToRemove.push_back(devInfoData);
+                        break;
+                    }
                 }
             }
             
@@ -758,32 +801,47 @@ namespace vdd {
             return Status::NotFound;
         }
         
-        // Remove each device
-        int successCount = 0;
-        int failCount = 0;
-        std::string lastError;
+    // Remove each device
+    int successCount = 0;
+    int failCount = 0;
+    std::string lastError;
+    
+    for (auto& devInfo : devicesToRemove) {
+        // Step 1: Disable device first (safer for display devices)
+        SP_PROPCHANGE_PARAMS disableParams = {};
+        disableParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
+        disableParams.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
+        disableParams.StateChange = DICS_DISABLE;
+        disableParams.Scope = DICS_FLAG_GLOBAL;
+        disableParams.HwProfile = 0;
         
-        for (auto& devInfo : devicesToRemove) {
-            SP_REMOVEDEVICE_PARAMS removeParams = {};
-            removeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
-            removeParams.ClassInstallHeader.InstallFunction = DIF_REMOVE;
-            removeParams.Scope = DI_REMOVEDEVICE_GLOBAL;
-            removeParams.HwProfile = 0;
+        if (SetupDiSetClassInstallParamsW(hDevInfo, &devInfo, 
+                reinterpret_cast<SP_CLASSINSTALL_HEADER*>(&disableParams), sizeof(disableParams))) {
+            SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, hDevInfo, &devInfo);
+            // Don't fail if disable fails, continue to remove
+        }
+        
+        // Step 2: Remove device
+        SP_REMOVEDEVICE_PARAMS removeParams = {};
+        removeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
+        removeParams.ClassInstallHeader.InstallFunction = DIF_REMOVE;
+        removeParams.Scope = DI_REMOVEDEVICE_GLOBAL;
+        removeParams.HwProfile = 0;
+        
+        if (SetupDiSetClassInstallParamsW(hDevInfo, &devInfo, 
+                reinterpret_cast<SP_CLASSINSTALL_HEADER*>(&removeParams), sizeof(removeParams))) {
             
-            if (SetupDiSetClassInstallParamsW(hDevInfo, &devInfo, 
-                    reinterpret_cast<SP_CLASSINSTALL_HEADER*>(&removeParams), sizeof(removeParams))) {
-                
-                if (SetupDiCallClassInstaller(DIF_REMOVE, hDevInfo, &devInfo)) {
-                    successCount++;
-                } else {
-                    failCount++;
-                    lastError = "Failed to remove device: " + std::to_string(::GetLastError());
-                }
+            if (SetupDiCallClassInstaller(DIF_REMOVE, hDevInfo, &devInfo)) {
+                successCount++;
             } else {
                 failCount++;
-                lastError = "Failed to set remove parameters: " + std::to_string(::GetLastError());
+                lastError = "Failed to remove device: " + std::to_string(::GetLastError());
             }
+        } else {
+            failCount++;
+            lastError = "Failed to set remove parameters: " + std::to_string(::GetLastError());
         }
+    }
         
         SetupDiDestroyDeviceInfoList(hDevInfo);
         
@@ -800,53 +858,22 @@ namespace vdd {
     }
 
     bool VddSdkImpl::IsDriverInstalled() {
-        // REAL IMPLEMENTATION - Check multiple sources for driver installation
+        // Simplified implementation - Check Registry only
         
-        // Method 1: Check if driver is in driver store using pnputil
-        FILE* pipe = _wpopen(L"pnputil /enum-drivers", L"r");
-        if (pipe) {
-            char buffer[1024];
-            std::string result;
-            while (fgets(buffer, sizeof(buffer), pipe)) {
-                result += buffer;
-            }
-            _pclose(pipe);
-            
-            // Check if our driver is in the list
-            if (result.find("iddsampledriver.inf") != std::string::npos) {
-                return true;
-            }
-        }
-        
-        // Method 2: Check registry for driver installation
+        // Method 1: Check Registry for device node
         HKEY hKey;
-        LONG result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, 
-            L"SYSTEM\\CurrentControlSet\\Services\\IddSampleDriver", 
-            0, KEY_READ, &hKey);
-        
-        if (result == ERROR_SUCCESS) {
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, 
+            L"SYSTEM\\CurrentControlSet\\Enum\\ROOT\\IddSampleDriver", 
+            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
             RegCloseKey(hKey);
             return true;
         }
         
-        // Method 3: Check for the device in device manager
-        result = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-            L"SYSTEM\\CurrentControlSet\\Enum\\ROOT\\IddSampleDriver",
-            0, KEY_READ, &hKey);
-            
-        if (result == ERROR_SUCCESS) {
+        // Method 2: Check for service entry (optional)
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+            L"SYSTEM\\CurrentControlSet\\Services\\IddSampleDriver",
+            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
             RegCloseKey(hKey);
-            return true;
-        }
-        
-        // Method 4: Check for UMDF driver in WUDF
-        result = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-            L"SYSTEM\\CurrentControlSet\\Services\\WUDFRd",
-            0, KEY_READ, &hKey);
-            
-        if (result == ERROR_SUCCESS) {
-            RegCloseKey(hKey);
-            // If WUDFRd service exists, assume our driver might be installed
             return true;
         }
         
@@ -924,15 +951,7 @@ namespace vdd {
             return Status::DriverError;
         }
         
-        // Simulate activation process
-        // In actual implementation, this would:
-        // 1. Connect to VddSvc service
-        // 2. Create virtual display objects
-        // 3. Configure EDID data
-        // 4. Set display modes and positions
-        // 5. Register displays with system
-        // 6. Start heartbeat monitoring
-        
+        // Simulated activation - to be implemented with real driver communication
         try {
             // Create virtual display descriptions
             for (uint32_t i = 0; i < count; ++i) {
@@ -971,12 +990,7 @@ namespace vdd {
             return Status::NotActive;
         }
         
-        // Simulate deactivation process
-        // In actual implementation, this would:
-        // 1. Remove virtual displays from system
-        // 2. Clean up display objects
-        // 3. Restore original desktop configuration
-        
+        // Simulated deactivation - to be implemented with real driver communication
         // Reset state
         m_isActive = false;
         m_activeDisplayCount = 0;

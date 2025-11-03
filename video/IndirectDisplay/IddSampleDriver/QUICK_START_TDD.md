@@ -1,63 +1,63 @@
-# 🚀 VDD SDK 第一個 TDD 測試 - 快速開始指南
+# 🚀 VDD SDK First TDD Test - Quick Start Guide
 
-## 📋 **準備工作**
+## 📋 **Prerequisites**
 
-### **1. 環境要求**
+### **1. Environment Requirements**
 - Windows 10/11
-- Visual Studio 2019+ 或 Visual Studio 2022
+- Visual Studio 2019+ or Visual Studio 2022
 - CMake 3.16+
-- Google Test 和 Google Mock
+- Google Test and Google Mock
 
-### **2. 安裝依賴**
+### **2. Install Dependencies**
 ```bash
-# 使用 vcpkg 安裝依賴
+# Install dependencies using vcpkg
 vcpkg install gtest gmock
 
-# 或者使用包管理器
-# 確保已安裝 Windows SDK
+# Or use package manager
+# Ensure Windows SDK is installed
 ```
 
-## 🎯 **立即開始**
+## 🎯 **Get Started Now**
 
-### **方法 1：使用自動化腳本**
+### **Method 1: Use Automation Script**
 ```bash
-# 1. 克隆或下載項目
-# 2. 運行自動化腳本
+# 1. Clone or download project
+# 2. Run automation script
 build_and_test.bat
 ```
 
-### **方法 2：手動構建**
+### **Method 2: Manual Build**
 ```bash
-# 1. 創建構建目錄
+# 1. Create build directory
 mkdir build
 cd build
 
-# 2. 配置 CMake
+# 2. Configure CMake
 cmake .. -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
 
-# 3. 構建項目
+# 3. Build project
 cmake --build . --config Release
 
-# 4. 運行第一個 TDD 測試
+# 4. Run first TDD test
 Release\first_tdd_test.exe
 ```
 
-## 📊 **預期結果**
+## 📊 **Expected Results**
 
-### **成功輸出示例**
+### **Successful Output Example**
 ```
 ========================================
-VDD SDK 第一個 TDD 測試
+VDD SDK First TDD Test
 ========================================
-設置測試環境...
+Setting up test environment...
 [==========] Running 10 tests from 1 test suite.
 [----------] Global test environment set-up.
 [----------] 10 tests from FirstTddTest
 [ RUN      ] FirstTddTest.GetVersion_ShouldReturnCorrectVersion
-版本測試通過: 1.0.0
+Version test passed: 1.0.0
 [       OK ] FirstTddTest.GetVersion_ShouldReturnCorrectVersion (0 ms)
 [ RUN      ] FirstTddTest.Initialize_WithValidConfig_ShouldReturnOk
-初始化測試通過: Success
+Initialization test passed: Success
 [       OK ] FirstTddTest.Initialize_WithValidConfig_ShouldReturnOk (1 ms)
 ...
 [----------] 10 tests from FirstTddTest (15 ms total)
@@ -65,100 +65,100 @@ VDD SDK 第一個 TDD 測試
 [==========] 10 tests from 1 test suite. (16 ms total)
 [  PASSED  ] 10 tests.
 ========================================
-所有測試通過！
+All tests passed!
 ========================================
 ```
 
-## 🔍 **測試內容**
+## 🔍 **Test Content**
 
-### **已實現的測試**
-1. **版本信息測試** - 驗證 SDK 版本
-2. **初始化測試** - 測試 SDK 初始化
-3. **重複初始化測試** - 測試狀態管理
-4. **關閉測試** - 測試 SDK 關閉
-5. **狀態查詢測試** - 測試基本狀態查詢
-6. **錯誤處理測試** - 測試錯誤信息
-7. **狀態轉換測試** - 測試狀態字符串轉換
-8. **系統信息測試** - 測試系統信息查詢
-9. **工具函數測試** - 測試管理員權限檢查
-10. **工作流程測試** - 測試完整工作流程
+### **Implemented Tests**
+1. **Version Information Test** - Verify SDK version
+2. **Initialization Test** - Test SDK initialization
+3. **Repeated Initialization Test** - Test state management
+4. **Shutdown Test** - Test SDK shutdown
+5. **Status Query Test** - Test basic status query
+6. **Error Handling Test** - Test error messages
+7. **State Transition Test** - Test state string conversion
+8. **System Information Test** - Test system information query
+9. **Utility Function Test** - Test administrator privilege check
+10. **Workflow Test** - Test complete workflow
 
-## 🎯 **TDD 循環示例**
+## 🎯 **TDD Cycle Example**
 
-### **Red 階段 - 寫測試**
+### **Red Phase - Write Test**
 ```cpp
 TEST_F(FirstTddTest, NewFeature_ShouldWork) {
-    // 編寫測試，預期會失敗
+    // Write test, expected to fail
     Status status = NewFeature();
     EXPECT_EQ(status, Status::Ok);
 }
 ```
 
-### **Green 階段 - 最小實現**
+### **Green Phase - Minimal Implementation**
 ```cpp
 Status NewFeature() {
-    // 最小實現，使測試通過
+    // Minimal implementation, make test pass
     return Status::Ok;
 }
 ```
 
-### **Refactor 階段 - 重構**
+### **Refactor Phase - Refactor**
 ```cpp
 Status NewFeature() {
-    // 重構代碼，提高質量
-    // 保持測試仍然通過
+    // Refactor code, improve quality
+    // Keep test still passing
     return Status::Ok;
 }
 ```
 
-## 🚨 **常見問題**
+## 🚨 **Common Issues**
 
-### **問題 1：構建失敗**
-**解決方案**:
-- 檢查 CMake 版本
-- 確保已安裝 Google Test
-- 檢查 Visual Studio 版本
+### **Issue 1: Build Failed**
+**Solution**:
+- Check CMake version
+- Ensure Google Test is installed
+- Check Visual Studio version
 
-### **問題 2：測試失敗**
-**解決方案**:
-- 檢查 SDK 實現是否完整
-- 查看詳細錯誤信息
-- 確保測試環境正確
+### **Issue 2: Test Failed**
+**Solution**:
+- Check if SDK implementation is complete
+- View detailed error messages
+- Ensure test environment is correct
 
-### **問題 3：權限問題**
-**解決方案**:
-- 以管理員身份運行
-- 檢查文件權限
-- 確保目錄存在
+### **Issue 3: Permission Issues**
+**Solution**:
+- Run as administrator
+- Check file permissions
+- Ensure directory exists
 
-## 📈 **下一步**
+## 📈 **Next Steps**
 
-### **即將實現的測試**
-1. **虛擬顯示器管理測試**
-2. **會話管理測試**
-3. **高級功能測試**
-4. **性能測試**
+### **Tests to be Implemented**
+1. **Virtual Display Management Tests**
+2. **Session Management Tests**
+3. **Advanced Feature Tests**
+4. **Performance Tests**
 
-### **TDD 最佳實踐**
-1. **保持測試簡單** - 一個測試只驗證一個行為
-2. **有意義的命名** - 測試名稱應該清楚表達意圖
-3. **AAA 模式** - Arrange-Act-Assert
-4. **及時重構** - 保持代碼整潔
+### **TDD Best Practices**
+1. **Keep Tests Simple** - One test verifies one behavior
+2. **Meaningful Naming** - Test names should clearly express intent
+3. **AAA Pattern** - Arrange-Act-Assert
+4. **Timely Refactor** - Keep code clean
 
-## 🎉 **成功指標**
+## 🎉 **Success Metrics**
 
-### **技術指標**
-- ✅ 所有測試通過
-- ✅ 測試執行時間 < 1 秒
-- ✅ 代碼覆蓋率 > 90%
-- ✅ 無內存洩漏
+### **Technical Metrics**
+- ✅ All tests pass
+- ✅ Test execution time < 1 second
+- ✅ Code coverage > 90%
+- ✅ No memory leaks
 
-### **開發指標**
-- ✅ 信心提升
-- ✅ 文檔作用
-- ✅ 設計改進
-- ✅ 錯誤發現
+### **Development Metrics**
+- ✅ Confidence boost
+- ✅ Documentation effect
+- ✅ Design improvement
+- ✅ Error discovery
 
 ---
 
-**開始您的 TDD 之旅吧！** 🚀
+**Start your TDD journey!** 🚀

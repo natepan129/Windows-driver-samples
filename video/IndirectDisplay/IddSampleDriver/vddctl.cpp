@@ -368,18 +368,8 @@ void cmdInstall(const ArgumentParser& args) {
     std::cout << "Administrator check: OK" << std::endl;
     std::cout << "----------------------------------------" << std::endl;
     
-    // Initialize SDK first if not already initialized
-    SdkConfig config;
-    config.enableLogging = args.hasOption("verbose");
-    config.maxLogLevel = 2;
-    
-    Status initStatus = Initialize(config);
-    if (initStatus != Status::Ok && initStatus != Status::AlreadyInstalled) {
-        std::cout << "Failed to initialize SDK: " << StatusToString(initStatus) << std::endl;
-        std::cout << "Error: " << vdd::GetLastError() << std::endl;
-        return;
-    }
-    std::cout << "SDK initialized" << std::endl;
+    // Note: User must call 'vddctl init' before install (design doc requirement)
+    std::cout << "Note: Please ensure 'vddctl init' was called first" << std::endl;
     std::cout << "----------------------------------------" << std::endl;
     
     std::string infPath = args.getOption("inf", "IddSampleDriver.inf");
@@ -430,33 +420,19 @@ void cmdUninstall(const ArgumentParser& args) {
     std::cout << "========================================" << std::endl;
     
     // Check for administrator privileges
-    if (!IsRunningAsAdmin()) {
-        std::cout << "ERROR: Administrator privileges required!" << std::endl;
-        std::cout << std::endl;
-        std::cout << "Please run this command as administrator:" << std::endl;
-        std::cout << "  Right-click -> Run as administrator" << std::endl;
-        std::cout << "  Or use: Start-Process -Verb RunAs" << std::endl;
-        std::cout << "========================================" << std::endl;
-        return;
+    bool hasAdmin = IsRunningAsAdmin();
+    std::cout << "Administrator check: " << (hasAdmin ? "OK" : "WARNING - No admin") << std::endl;
+    std::cout << "----------------------------------------" << std::endl;
+    if (!hasAdmin) {
+        std::cout << "Note: Some operations may fail without admin privileges" << std::endl;
     }
-    std::cout << "Administrator check: OK" << std::endl;
     std::cout << "----------------------------------------" << std::endl;
     
-    // Initialize SDK first if not already initialized
-    SdkConfig config;
-    config.enableLogging = args.hasOption("verbose");
-    config.maxLogLevel = 2;
-    
-    Status initStatus = Initialize(config);
-    if (initStatus != Status::Ok && initStatus != Status::AlreadyInstalled) {
-        std::cout << "Failed to initialize SDK: " << StatusToString(initStatus) << std::endl;
-        std::cout << "Error: " << vdd::GetLastError() << std::endl;
-        return;
-    }
-    std::cout << "SDK initialized" << std::endl;
+    // Note: User must call 'vddctl init' before uninstall (design doc requirement)
+    std::cout << "Note: Please ensure 'vddctl init' was called first" << std::endl;
     std::cout << "----------------------------------------" << std::endl;
     
-    Status status = UninstallDriver();
+    Status status = vdd::UninstallDriver();
     if (status == Status::Ok) {
         std::cout << "Driver uninstalled successfully." << std::endl;
     } else {

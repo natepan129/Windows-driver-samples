@@ -1,64 +1,63 @@
-# 手动清理步骤
+# Manual Cleanup Steps
 
-## 🎯 问题
-系统中有两个设备：
-- `ROOT\IDDSAMPLEDRIVER\0000` - 旧的，无 Display Class
-- `ROOT\IDDSAMPLEDRIVER\0001` - 新的，有 Display Class ✅
+## 🎯 Problem
+Two devices in system:
+- `ROOT\IDDSAMPLEDRIVER\0000` - Old, no Display Class
+- `ROOT\IDDSAMPLEDRIVER\0001` - New, has Display Class ✅
 
-## ✅ 方法 1：使用管理员 PowerShell（推荐）
+## ✅ Method 1: Use Administrator PowerShell (Recommended)
 
 ```powershell
-# 1. 右键 "Windows PowerShell" → "以管理员身份运行"
+# 1. Right-click "Windows PowerShell" → "Run as administrator"
 
-# 2. 删除旧设备
+# 2. Delete old device
 pnputil /remove-device "ROOT\IDDSAMPLEDRIVER\0000"
 
-# 3. 验证
+# 3. Verify
 Get-PnpDevice | Where-Object { $_.InstanceId -like '*IddSampleDriver*' } | Format-Table FriendlyName, Status, Class, InstanceId -AutoSize
 ```
 
-**预期结果**：只剩下 `ROOT\IDDSAMPLEDRIVER\0001`，有 Display Class
+**Expected Result**: Only `ROOT\IDDSAMPLEDRIVER\0001` remains, with Display Class
 
 ---
 
-## ✅ 方法 2：使用批处理脚本
+## ✅ Method 2: Use Batch Script
 
 ```batch
-# 右键 full_test_fixed_inf.bat → "以管理员身份运行"
+# Right-click full_test_fixed_inf.bat → "Run as administrator"
 ```
 
-这个脚本会：
-1. 清理所有旧设备
-2. 重新安装（用修复后的 INF）
-3. 验证结果
+This script will:
+1. Clean all old devices
+2. Reinstall (with fixed INF)
+3. Verify results
 
 ---
 
-## ✅ 方法 3：Device Manager 手动删除
+## ✅ Method 3: Manual Delete in Device Manager
 
-1. 打开设备管理器（`devmgmt.msc`）
-2. 查看 → 显示隐藏的设备
-3. 找到 "IddSampleDriver Device"
-4. 右键 → 卸载设备
-5. ✓ 勾选 "删除此设备的驱动程序软件"
-6. 确定
+1. Open Device Manager (`devmgmt.msc`)
+2. View → Show hidden devices
+3. Find "IddSampleDriver Device"
+4. Right-click → Uninstall device
+5. ✓ Check "Delete the driver software for this device"
+6. OK
 
 ---
 
-## 🧪 验证成功标准
+## 🧪 Success Verification Criteria
 
-运行此命令：
+Run this command:
 ```powershell
 Get-PnpDevice | Where-Object { $_.InstanceId -like '*IddSampleDriver*' } | Format-Table FriendlyName, Status, Class, ClassGuid -AutoSize
 ```
 
-**期望输出**：
+**Expected Output**:
 ```
 FriendlyName           Status Class   ClassGuid
 IddSampleDriver Device OK     Display {4d36e968-e325-11ce-bfc1-08002be10318}
 ```
 
-✅ 有 `Class: Display`
-✅ 有正确的 `ClassGuid`
+✅ Has `Class: Display`
+✅ Has correct `ClassGuid`
 ✅ `Status: OK`
-
