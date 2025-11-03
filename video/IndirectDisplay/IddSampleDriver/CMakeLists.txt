@@ -50,6 +50,7 @@ target_link_libraries(vddsdk
     PRIVATE
     setupapi
     newdev
+    cfgmgr32
     dxgi
     d3d11
     advapi32
@@ -59,7 +60,7 @@ target_link_libraries(vddsdk
 
 # Create the CLI tool executable
 add_executable(vddctl vddctl.cpp)
-target_link_libraries(vddctl vddsdk_static setupapi newdev advapi32)
+target_link_libraries(vddctl vddsdk_static setupapi newdev cfgmgr32 advapi32)
 
 # Installation
 install(TARGETS vddsdk vddctl
@@ -83,6 +84,7 @@ target_link_libraries(vddsdk_static
     PRIVATE
     setupapi
     newdev
+    cfgmgr32
     dxgi
     d3d11
     advapi32

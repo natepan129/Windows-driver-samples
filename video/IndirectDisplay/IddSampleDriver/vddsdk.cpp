@@ -233,20 +233,16 @@ namespace vdd {
     Status Activate(const VirtualDisplayDesc& desc, uint32_t count) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Control operation - require explicit initialization
-        VddSdkImpl* impl = GetInstanceStrict_Locked();
-        if (!impl) return Status::NotInstalled;
-        
+        // Independent operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
         return impl->Activate(desc, count);
     }
 
     Status Deactivate() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Control operation - require explicit initialization
-        VddSdkImpl* impl = GetInstanceStrict_Locked();
-        if (!impl) return Status::NotInstalled;
-        
+        // Independent operation - auto-create if needed
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
         return impl->Deactivate();
     }
 
@@ -925,9 +921,9 @@ namespace vdd {
             failCount++;
             lastError = "Failed to set remove parameters: " + std::to_string(::GetLastError());
         }
-    }
+        }
         
-            SetupDiDestroyDeviceInfoList(hDevInfo);
+        SetupDiDestroyDeviceInfoList(hDevInfo);
         
         // Clean up Driver Store (remove INF packages)
         // This prevents accumulation of oem1.inf, oem2.inf, etc.
@@ -997,7 +993,7 @@ namespace vdd {
                     // - ROOT\IDDSAMPLEDRIVER\0000
                     if (_wcsnicmp(p, L"ROOT\\IddSampleDriver", 20) == 0) {
                         SetupDiDestroyDeviceInfoList(hDevInfo);
-                        return true;
+            return true;
                     }
                 }
             }
@@ -1037,11 +1033,7 @@ namespace vdd {
     Status VddSdkImpl::Activate(const VirtualDisplayDesc& desc, uint32_t count) {
         std::lock_guard<std::mutex> lock(m_mutex);
         
-        // Check initialization status
-        if (!m_initialized) {
-            SetLastError("SDK not initialized. Call Initialize() first.");
-            return Status::NotInstalled;
-        }
+        printf("[VDD] Activate: Starting...\n");
         
         // Parameter validation
         if (desc.name.empty()) {
@@ -1066,75 +1058,273 @@ namespace vdd {
             return Status::InvalidArg;
         }
         
-        // Check if already activated
-        if (m_isActive) {
-            SetLastError("Virtual displays already active. Call Deactivate() first.");
-            return Status::AlreadyInstalled;
-        }
-        
-        // Check if driver is installed
+        // Check if driver is installed (don't check m_isActive - each vddctl run is a new process)
         if (!IsDriverInstalled()) {
             SetLastError("Virtual display driver not installed");
             return Status::DriverError;
         }
         
-        // Simulated activation - to be implemented with real driver communication
-        try {
-            // Create virtual display descriptions
-            for (uint32_t i = 0; i < count; ++i) {
-                VirtualDisplayDesc displayDesc = desc;
-                displayDesc.name = desc.name + "_" + std::to_string(i + 1);
-                m_activeDisplays.push_back(displayDesc);
-            }
-            
-            // Set internal state
-            m_activeDisplayCount = count;
-            m_isActive = true;
-            
-            // Log activation information
-            std::string logMsg = "Activated " + std::to_string(count) + " virtual display(s): ";
-            for (const auto& display : m_activeDisplays) {
-                logMsg += display.name + " ";
-            }
-            SetLastError(logMsg);
-            
-            return Status::Ok;
-            
-        } catch (const std::exception& e) {
-            SetLastError("Failed to activate virtual displays: " + std::string(e.what()));
-            m_isActive = false;
-            m_activeDisplayCount = 0;
-            m_activeDisplays.clear();
+        // Real activation using SetupAPI to enable the device
+        // Get device info set for our driver
+        HDEVINFO hDevInfo = SetupDiGetClassDevsW(
+            &GUID_DEVCLASS_DISPLAY,
+            nullptr,
+            nullptr,
+            DIGCF_PRESENT | DIGCF_ALLCLASSES
+        );
+        
+        if (hDevInfo == INVALID_HANDLE_VALUE) {
+            DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: SetupDiGetClassDevsW failed, error=%d\n", err);
+            SetLastError("Failed to get device list: " + std::to_string(err));
             return Status::DriverError;
         }
+        
+        bool deviceFound = false;
+        SP_DEVINFO_DATA devInfoData = {};
+        devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+        
+        // Find our device
+        for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); ++i) {
+            wchar_t hwid[256] = {};
+            if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
+                nullptr, (PBYTE)hwid, sizeof(hwid), nullptr)) {
+                
+                if (_wcsicmp(hwid, L"ROOT\\IddSampleDriver") == 0) {
+                    deviceFound = true;
+                    printf("[VDD] Found device: %ls\n", hwid);
+                    break;
+                }
+            }
+        }
+        
+        if (!deviceFound) {
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            SetLastError("Driver device not found in system");
+            return Status::NotInstalled;
+        }
+        
+        // Enable the device using DIF_PROPERTYCHANGE
+        SP_PROPCHANGE_PARAMS propChangeParams = {};
+        propChangeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
+        propChangeParams.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
+        propChangeParams.StateChange = DICS_ENABLE;
+        propChangeParams.Scope = DICS_FLAG_GLOBAL;
+        propChangeParams.HwProfile = 0;
+        
+        if (!SetupDiSetClassInstallParamsW(hDevInfo, &devInfoData,
+            (SP_CLASSINSTALL_HEADER*)&propChangeParams, sizeof(propChangeParams))) {
+            DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: SetupDiSetClassInstallParamsW failed, error=%d\n", err);
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            SetLastError("Failed to set enable parameters: " + std::to_string(err));
+            return Status::DriverError;
+        }
+        
+        if (!SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, hDevInfo, &devInfoData)) {
+            DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: DIF_PROPERTYCHANGE (ENABLE) failed, error=%d\n", err);
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            
+            // Device might already be enabled - check status
+            ULONG status = 0, problemNumber = 0;
+            if (CM_Get_DevNode_Status(&status, &problemNumber, devInfoData.DevInst, 0) == CR_SUCCESS) {
+                if (!(status & DN_HAS_PROBLEM) && (status & DN_STARTED)) {
+                    printf("[VDD] Device already enabled and running\n");
+                    // Device is already enabled, treat as success
+                } else {
+                    SetLastError("Failed to enable device: " + std::to_string(err));
+                    return Status::DriverError;
+                }
+            } else {
+                SetLastError("Failed to enable device: " + std::to_string(err));
+                return Status::DriverError;
+            }
+        }
+        
+        SetupDiDestroyDeviceInfoList(hDevInfo);
+        
+        // Update internal state
+        m_isActive = true;
+        m_activeDisplayCount = count;
+        
+        // Create display descriptors for tracking
+        for (uint32_t i = 0; i < count; ++i) {
+            VirtualDisplayDesc displayDesc = desc;
+            displayDesc.name = desc.name + "_" + std::to_string(i + 1);
+            m_activeDisplays.push_back(displayDesc);
+        }
+        
+        printf("[VDD] Activate: SUCCESS - Device enabled\n");
+        SetLastError("Virtual display driver activated successfully");
+        return Status::Ok;
     }
 
     Status VddSdkImpl::Deactivate() {
         std::lock_guard<std::mutex> lock(m_mutex);
         
-        if (!m_isActive) {
-            SetLastError("No virtual displays are currently active");
-            return Status::NotActive;
+        printf("[VDD] Deactivate: Starting...\n");
+        
+        // Check if driver is installed (don't check m_isActive - each vddctl run is a new process)
+        if (!IsDriverInstalled()) {
+            SetLastError("Virtual display driver not installed");
+            return Status::NotInstalled;
         }
         
-        // Simulated deactivation - to be implemented with real driver communication
+        // Real deactivation using SetupAPI to disable the device
+        HDEVINFO hDevInfo = SetupDiGetClassDevsW(
+            &GUID_DEVCLASS_DISPLAY,
+            nullptr,
+            nullptr,
+            DIGCF_PRESENT | DIGCF_ALLCLASSES
+        );
+        
+        if (hDevInfo == INVALID_HANDLE_VALUE) {
+            DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: SetupDiGetClassDevsW failed, error=%d\n", err);
+            SetLastError("Failed to get device list: " + std::to_string(err));
+            return Status::DriverError;
+        }
+        
+        bool deviceFound = false;
+        SP_DEVINFO_DATA devInfoData = {};
+        devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+        
+        // Find our device
+        for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); ++i) {
+            wchar_t hwid[256] = {};
+            if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
+                nullptr, (PBYTE)hwid, sizeof(hwid), nullptr)) {
+                
+                if (_wcsicmp(hwid, L"ROOT\\IddSampleDriver") == 0) {
+                    deviceFound = true;
+                    printf("[VDD] Found device: %ls\n", hwid);
+                    break;
+                }
+            }
+        }
+        
+        if (!deviceFound) {
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            SetLastError("Driver device not found in system");
+            return Status::NotInstalled;
+        }
+        
+        // Disable the device using DIF_PROPERTYCHANGE
+        SP_PROPCHANGE_PARAMS propChangeParams = {};
+        propChangeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
+        propChangeParams.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
+        propChangeParams.StateChange = DICS_DISABLE;
+        propChangeParams.Scope = DICS_FLAG_GLOBAL;
+        propChangeParams.HwProfile = 0;
+        
+        if (!SetupDiSetClassInstallParamsW(hDevInfo, &devInfoData,
+            (SP_CLASSINSTALL_HEADER*)&propChangeParams, sizeof(propChangeParams))) {
+            DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: SetupDiSetClassInstallParamsW failed, error=%d\n", err);
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            SetLastError("Failed to set disable parameters: " + std::to_string(err));
+            return Status::DriverError;
+        }
+        
+        if (!SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, hDevInfo, &devInfoData)) {
+            DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: DIF_PROPERTYCHANGE (DISABLE) failed, error=%d\n", err);
+            SetupDiDestroyDeviceInfoList(hDevInfo);
+            SetLastError("Failed to disable device: " + std::to_string(err));
+            return Status::DriverError;
+        }
+        
+        SetupDiDestroyDeviceInfoList(hDevInfo);
+        
         // Reset state
         m_isActive = false;
         m_activeDisplayCount = 0;
         m_activeDisplays.clear();
         
-        SetLastError("Virtual displays deactivated successfully");
+        printf("[VDD] Deactivate: SUCCESS - Device disabled\n");
+        SetLastError("Virtual display driver deactivated successfully");
         return Status::Ok;
     }
 
     bool VddSdkImpl::IsActive() {
         std::lock_guard<std::mutex> lock(m_mutex);
-        return m_isActive;
+        
+        // Query real device status from system instead of using cached m_isActive
+        // Check if driver is installed first
+        if (!IsDriverInstalled()) {
+            return false;
+        }
+        
+        // Get device info set
+        HDEVINFO hDevInfo = SetupDiGetClassDevsW(
+            &GUID_DEVCLASS_DISPLAY,
+            nullptr,
+            nullptr,
+            DIGCF_PRESENT | DIGCF_ALLCLASSES
+        );
+        
+        if (hDevInfo == INVALID_HANDLE_VALUE) {
+            return false;
+        }
+        
+        bool isActive = false;
+        SP_DEVINFO_DATA devInfoData = {};
+        devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+        
+        // Find our device
+        for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); ++i) {
+            wchar_t hwid[256] = {};
+            if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
+                nullptr, (PBYTE)hwid, sizeof(hwid), nullptr)) {
+                
+                if (_wcsicmp(hwid, L"ROOT\\IddSampleDriver") == 0) {
+                    // Found our device - check if it's started and has no problems
+                    ULONG status = 0, problemNumber = 0;
+                    if (CM_Get_DevNode_Status(&status, &problemNumber, devInfoData.DevInst, 0) == CR_SUCCESS) {
+                        // Device is active if it's started and has no problems
+                        isActive = (status & DN_STARTED) && !(status & DN_HAS_PROBLEM);
+                    }
+                    break;
+                }
+            }
+        }
+        
+        SetupDiDestroyDeviceInfoList(hDevInfo);
+        return isActive;
     }
 
     uint32_t VddSdkImpl::GetActiveDisplayCount() {
         std::lock_guard<std::mutex> lock(m_mutex);
-        return m_activeDisplayCount;
+        
+        // Query real display output count from system instead of cached value
+        // Enumerate all display devices and count outputs from IddSampleDriver
+        uint32_t count = 0;
+        bool foundAdapter = false;  // Only count monitors from the first occurrence
+        DISPLAY_DEVICEW displayDevice = {};
+        displayDevice.cb = sizeof(DISPLAY_DEVICEW);
+        
+        // Enumerate all display adapters
+        for (DWORD adapterIndex = 0; EnumDisplayDevicesW(nullptr, adapterIndex, &displayDevice, 0); ++adapterIndex) {
+            // Check if this is our IddSampleDriver adapter
+            if (wcsstr(displayDevice.DeviceString, L"IddSampleDriver") != nullptr) {
+                // Only count the first occurrence (adapter appears multiple times due to multiple outputs)
+                if (!foundAdapter) {
+                    foundAdapter = true;
+                    
+                    // Enumerate monitors/outputs for this adapter
+                    DISPLAY_DEVICEW monitorDevice = {};
+                    monitorDevice.cb = sizeof(DISPLAY_DEVICEW);
+                    
+                    for (DWORD monitorIndex = 0; EnumDisplayDevicesW(displayDevice.DeviceName, monitorIndex, &monitorDevice, 0); ++monitorIndex) {
+                        // Count all monitors (even if not active - they still exist)
+                        count++;
+                    }
+                }
+            }
+        }
+        
+        return count;
     }
 
     Status VddSdkImpl::SetMode(uint32_t outputIndex, const DisplayMode& mode) {
