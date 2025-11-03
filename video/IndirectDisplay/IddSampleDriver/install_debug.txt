@@ -1,3 +1,0 @@
-Installing driver...
-Failed to install driver: Driver operation failed
-Error: Failed to open INF file: 2
