@@ -551,3 +551,7 @@ vddctl init
 | `list` | ❌ | List displays |
 | `shutdown` | ❌ | Shutdown SDK |
 | `help` | ❌ | Display help |
+
+
+
+

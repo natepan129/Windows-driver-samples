@@ -274,3 +274,48 @@ build\bin\Release\vddctl.exe shutdown
 4. Mark completed items in the checklist
 
 **Note**: All commands need to be executed in the project directory, ensure `build\bin\Release\vddctl.exe` path is correct.
+
+### **基本功能檢查**
+- [ ] `vddctl version` - 顯示版本信息
+- [ ] `vddctl help` - 顯示幫助信息
+- [ ] `vddctl init` - 初始化 SDK
+- [ ] `vddctl status` - 檢查狀態
+- [ ] `vddctl shutdown` - 關閉 SDK
+
+### **驅動管理檢查**
+- [ ] `vddctl install` - 安裝驅動
+- [ ] `vddctl uninstall` - 卸載驅動
+- [ ] `pnputil /enum-drivers` - 檢查驅動安裝
+
+### **虛擬顯示檢查**
+- [ ] `vddctl activate` - 激活虛擬顯示
+- [ ] `vddctl deactivate` - 停用虛擬顯示
+- [ ] `vddctl list` - 列出顯示器
+
+### **顯示配置檢查**
+- [ ] `vddctl setmode` - 設置顯示模式
+- [ ] `vddctl setlocation` - 設置顯示位置
+- [ ] `vddctl setprimary` - 設置主顯示器
+
+### **場景測試檢查**
+- [ ] 場景 1: VDD 作為顯示代理
+- [ ] 場景 2: VDD 作為次要顯示器
+- [ ] 場景 3: VDD 作為主顯示器
+
+### **錯誤處理檢查**
+- [ ] 權限錯誤處理
+- [ ] 參數驗證錯誤
+- [ ] 缺少參數錯誤
+
+---
+
+**使用說明**:
+1. 複製上述命令到命令提示符中執行
+2. 確保以管理員身份運行需要權限的命令
+3. 檢查每個命令的輸出結果
+4. 在檢查清單中標記完成的項目
+
+**注意**: 所有命令都需要在項目目錄中執行，確保 `build\bin\Release\vddctl.exe` 路徑正確。
+
+
+

@@ -206,8 +206,9 @@ namespace vdd {
     bool IsDriverInstalled() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
+        // Auto-create instance if needed (since each vddctl call is a separate process)
         if (!g_sdkInstance) {
-            return false;
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
         }
 
         return g_sdkInstance->IsDriverInstalled();
@@ -216,8 +217,9 @@ namespace vdd {
     Version GetDriverVersion() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
+        // Auto-create instance if needed
         if (!g_sdkInstance) {
-            return {};
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
         }
 
         return g_sdkInstance->GetDriverVersion();
@@ -246,8 +248,9 @@ namespace vdd {
     bool IsActive() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
+        // Auto-create instance if needed
         if (!g_sdkInstance) {
-            return false;
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
         }
 
         return g_sdkInstance->IsActive();
@@ -256,8 +259,9 @@ namespace vdd {
     uint32_t GetActiveDisplayCount() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
+        // Auto-create instance if needed
         if (!g_sdkInstance) {
-            return 0;
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
         }
 
         return g_sdkInstance->GetActiveDisplayCount();
@@ -316,8 +320,9 @@ namespace vdd {
     Status EnumerateAdapters(std::vector<AdapterInfo>& adapters) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
+        // Auto-create instance if needed
         if (!g_sdkInstance) {
-            return Status::NotInstalled;
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
         }
 
         return g_sdkInstance->EnumerateAdapters(adapters);
@@ -326,8 +331,9 @@ namespace vdd {
     Status EnumerateModes(uint32_t outputIndex, std::vector<DisplayMode>& modes) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
+        // Auto-create instance if needed
         if (!g_sdkInstance) {
-            return Status::NotInstalled;
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
         }
 
         return g_sdkInstance->EnumerateModes(outputIndex, modes);
@@ -416,8 +422,9 @@ namespace vdd {
     std::string GetLastError() {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
+        // Auto-create instance if needed
         if (!g_sdkInstance) {
-            return "SDK not initialized";
+            g_sdkInstance = std::make_unique<VddSdkImpl>();
         }
 
         return g_sdkInstance->GetLastError();
@@ -592,34 +599,48 @@ namespace vdd {
     Status VddSdkImpl::InstallDriver(const std::wstring& infPath) {
         std::lock_guard<std::mutex> lock(m_installMutex);
         
+        printf("[VDD] ========================================\n");
+        printf("[VDD] InstallDriver START\n");
+        printf("[VDD] ========================================\n");
+        printf("[VDD] INF Path (input): %ls\n", infPath.c_str());
+        
         // Validation
         if (infPath.empty()) {
+            printf("[VDD] ERROR: INF path is empty\n");
             SetLastError("INF path cannot be empty");
             return Status::InvalidArg;
         }
+        printf("[VDD] Step 1: Validation passed\n");
         
         // Convert to absolute path
         wchar_t absPath[MAX_PATH];
         if (GetFullPathNameW(infPath.c_str(), MAX_PATH, absPath, nullptr) == 0) {
+            printf("[VDD] ERROR: GetFullPathNameW failed, error=%d\n", GetLastError());
             SetLastError("Invalid INF path");
             return Status::InvalidArg;
         }
+        printf("[VDD] Step 2: Absolute path: %ls\n", absPath);
         
         if (GetFileAttributesW(absPath) == INVALID_FILE_ATTRIBUTES) {
+            printf("[VDD] ERROR: INF file not found at: %ls\n", absPath);
             SetLastError("INF file not found");
             return Status::InvalidArg;
         }
+        printf("[VDD] Step 3: File exists\n");
         
         // Check admin
         if (!IsRunningAsAdministrator()) {
+            printf("[VDD] ERROR: Not running as Administrator\n");
             SetLastError("Administrator privileges required");
             return Status::AdminRequired;
         }
+        printf("[VDD] Step 4: Running as Administrator\n");
         
         // Check if device already exists
         GUID displayClassGuid = { 0x4D36E968, 0xE325, 0x11CE, 
             { 0xBF, 0xC1, 0x08, 0x00, 0x2B, 0xE1, 0x03, 0x18 } };
         
+        printf("[VDD] Step 5: Checking for existing device...\n");
         {
             HDEVINFO hCheck = SetupDiGetClassDevsW(&displayClassGuid, nullptr, nullptr, DIGCF_ALLCLASSES);
             if (hCheck != INVALID_HANDLE_VALUE) {
@@ -630,6 +651,7 @@ namespace vdd {
                         nullptr, (BYTE*)hwid, sizeof(hwid), nullptr)) {
                         for (wchar_t* p = hwid; *p; p += wcslen(p) + 1) {
                             if (_wcsicmp(p, L"ROOT\\IddSampleDriver") == 0) {
+                                printf("[VDD] ERROR: Device already exists!\n");
                                 SetupDiDestroyDeviceInfoList(hCheck);
                                 SetLastError("Device already installed");
                                 return Status::AlreadyInstalled;
@@ -640,57 +662,75 @@ namespace vdd {
                 SetupDiDestroyDeviceInfoList(hCheck);
             }
         }
+        printf("[VDD] Step 6: No existing device found\n");
         
         // Stage INF to Driver Store
+        printf("[VDD] Step 7: Staging INF to Driver Store...\n");
         BOOL needReboot = FALSE;
         if (!DiInstallDriverW(nullptr, absPath, DIIRFLAG_FORCE_INF, &needReboot)) {
             DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: DiInstallDriverW failed, error=%d\n", err);
             SetLastError("Failed to stage INF to Driver Store: " + std::to_string(err));
             return Status::DriverError;
         }
+        printf("[VDD] Step 8: INF staged successfully (reboot=%d)\n", needReboot);
         
         // Create device info list
+        printf("[VDD] Step 9: Creating device info list...\n");
         HDEVINFO hDevInfo = SetupDiCreateDeviceInfoList(&displayClassGuid, nullptr);
         if (hDevInfo == INVALID_HANDLE_VALUE) {
+            printf("[VDD] ERROR: SetupDiCreateDeviceInfoList failed, error=%d\n", ::GetLastError());
             SetLastError("Failed to create device info list: " + std::to_string(::GetLastError()));
             return Status::DriverError;
         }
+        printf("[VDD] Step 10: Device info list created\n");
         
         // Create device info
+        printf("[VDD] Step 11: Creating device info...\n");
         SP_DEVINFO_DATA devInfoData = {};
         devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
         
         if (!SetupDiCreateDeviceInfoW(hDevInfo, L"IddSampleDriver", &displayClassGuid,
             L"IddSampleDriver Device", nullptr, DICD_GENERATE_ID, &devInfoData)) {
             DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: SetupDiCreateDeviceInfoW failed, error=%d\n", err);
             SetupDiDestroyDeviceInfoList(hDevInfo);
             SetLastError("Failed to create device info: " + std::to_string(err));
             return Status::DriverError;
         }
+        printf("[VDD] Step 12: Device info created\n");
         
         // Set HWID
+        printf("[VDD] Step 13: Setting Hardware ID...\n");
         wchar_t hwid[] = L"ROOT\\IddSampleDriver\0\0";
         if (!SetupDiSetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
             (const BYTE*)hwid, sizeof(hwid))) {
             DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: SetupDiSetDeviceRegistryPropertyW failed, error=%d\n", err);
             SetupDiDestroyDeviceInfoList(hDevInfo);
             SetLastError("Failed to set hardware ID: " + std::to_string(err));
             return Status::DriverError;
         }
+        printf("[VDD] Step 14: Hardware ID set\n");
         
         // Register device
+        printf("[VDD] Step 15: Registering device...\n");
         if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, hDevInfo, &devInfoData)) {
             DWORD err = ::GetLastError();
+            printf("[VDD] ERROR: DIF_REGISTERDEVICE failed, error=%d\n", err);
             SetupDiDestroyDeviceInfoList(hDevInfo);
             SetLastError("Failed to register device: " + std::to_string(err));
             return Status::DriverError;
         }
+        printf("[VDD] Step 16: Device registered\n");
         
         // Set install params
+        printf("[VDD] Step 17: Setting install parameters...\n");
         SP_DEVINSTALL_PARAMS_W installParams = {};
         installParams.cbSize = sizeof(SP_DEVINSTALL_PARAMS_W);
         
         if (!SetupDiGetDeviceInstallParamsW(hDevInfo, &devInfoData, &installParams)) {
+            printf("[VDD] ERROR: SetupDiGetDeviceInstallParamsW failed, error=%d\n", ::GetLastError());
             goto ROLLBACK;
         }
         
@@ -698,42 +738,83 @@ namespace vdd {
         installParams.Flags |= DI_ENUMSINGLEINF;
         
         if (!SetupDiSetDeviceInstallParamsW(hDevInfo, &devInfoData, &installParams)) {
+            printf("[VDD] ERROR: SetupDiSetDeviceInstallParamsW failed, error=%d\n", ::GetLastError());
             goto ROLLBACK;
         }
+        printf("[VDD] Step 18: Install parameters set\n");
         
         // Build driver list (COMPATDRIVER instead of CLASSDRIVER)
+        printf("[VDD] Step 19: Building driver list...\n");
         if (!SetupDiBuildDriverInfoList(hDevInfo, &devInfoData, SPDIT_COMPATDRIVER)) {
+            printf("[VDD] ERROR: SetupDiBuildDriverInfoList failed, error=%d\n", ::GetLastError());
             goto ROLLBACK;
         }
+        printf("[VDD] Step 20: Driver list built\n");
         
         // Select best compatible driver
+        printf("[VDD] Step 21: Selecting best compatible driver...\n");
         if (!SetupDiCallClassInstaller(DIF_SELECTBESTCOMPATDRV, hDevInfo, &devInfoData)) {
+            printf("[VDD] ERROR: DIF_SELECTBESTCOMPATDRV failed, error=%d\n", ::GetLastError());
             goto ROLLBACK_WITH_LIST;
         }
+        printf("[VDD] Step 22: Driver selected\n");
         
         // Install device
+        printf("[VDD] Step 23: Installing device (this may take a while)...\n");
         if (!SetupDiCallClassInstaller(DIF_INSTALLDEVICE, hDevInfo, &devInfoData)) {
-            goto ROLLBACK_WITH_LIST;
+            DWORD err = ::GetLastError();
+            printf("[VDD] WARNING: DIF_INSTALLDEVICE failed, error=%d\n", err);
+            printf("[VDD] Step 23b: Trying fallback method (UpdateDriverForPlugAndPlayDevices)...\n");
+            
+            // Fallback: Use UpdateDriverForPlugAndPlayDevices
+            // This method is more tolerant of unsigned drivers
+            BOOL rebootRequired = FALSE;
+            BOOL fallbackResult = UpdateDriverForPlugAndPlayDevicesW(
+                nullptr,
+                L"ROOT\\IddSampleDriver",
+                absPath,
+                INSTALLFLAG_FORCE,
+                &rebootRequired
+            );
+            
+            if (!fallbackResult) {
+                printf("[VDD] ERROR: Fallback method also failed, error=%d\n", ::GetLastError());
+                goto ROLLBACK_WITH_LIST;
+            }
+            
+            printf("[VDD] Step 24: Device installed via fallback method!\n");
+            if (rebootRequired) {
+                needReboot = TRUE;
+            }
+        } else {
+            printf("[VDD] Step 24: Device installed successfully!\n");
         }
         
         // Cleanup
         SetupDiDestroyDriverInfoList(hDevInfo, &devInfoData, SPDIT_COMPATDRIVER);
         SetupDiDestroyDeviceInfoList(hDevInfo);
         
+        printf("[VDD] ========================================\n");
         if (needReboot) {
+            printf("[VDD] SUCCESS: Driver installed (reboot may be required)\n");
             SetLastError("Driver installed successfully (reboot may be required)");
         } else {
+            printf("[VDD] SUCCESS: Driver installed\n");
             SetLastError("Driver installed successfully");
         }
+        printf("[VDD] ========================================\n");
         
         return Status::Ok;
 
     ROLLBACK_WITH_LIST:
+        printf("[VDD] *** ROLLBACK: Destroying driver info list ***\n");
         SetupDiDestroyDriverInfoList(hDevInfo, &devInfoData, SPDIT_COMPATDRIVER);
         
     ROLLBACK:
         {
             DWORD lastErr = ::GetLastError();
+            printf("[VDD] *** ROLLBACK: Installation failed, error=%d ***\n", lastErr);
+            printf("[VDD] *** ROLLBACK: Removing partially created device ***\n");
             
             // Remove the device node we just created
             SP_REMOVEDEVICE_PARAMS removeParams = {};
@@ -787,9 +868,9 @@ namespace vdd {
                     if (_wcsicmp(p, L"ROOT\\IddSampleDriver") == 0) {
                         isOurDevice = true;
                         devicesToRemove.push_back(devInfoData);
-                        break;
-                    }
+                    break;
                 }
+            }
             }
             
             deviceIndex++;
@@ -829,7 +910,7 @@ namespace vdd {
         removeParams.HwProfile = 0;
         
         if (SetupDiSetClassInstallParamsW(hDevInfo, &devInfo, 
-                reinterpret_cast<SP_CLASSINSTALL_HEADER*>(&removeParams), sizeof(removeParams))) {
+            reinterpret_cast<SP_CLASSINSTALL_HEADER*>(&removeParams), sizeof(removeParams))) {
             
             if (SetupDiCallClassInstaller(DIF_REMOVE, hDevInfo, &devInfo)) {
                 successCount++;
@@ -843,7 +924,7 @@ namespace vdd {
         }
     }
         
-        SetupDiDestroyDeviceInfoList(hDevInfo);
+            SetupDiDestroyDeviceInfoList(hDevInfo);
         
         // Report results
         std::string message = "Uninstall: " + std::to_string(successCount) + " device(s) removed";
@@ -858,25 +939,51 @@ namespace vdd {
     }
 
     bool VddSdkImpl::IsDriverInstalled() {
-        // Simplified implementation - Check Registry only
+        // Use SetupAPI to check if device actually exists
+        GUID displayClassGuid = { 0x4D36E968, 0xE325, 0x11CE, 
+            { 0xBF, 0xC1, 0x08, 0x00, 0x2B, 0xE1, 0x03, 0x18 } };
         
-        // Method 1: Check Registry for device node
-        HKEY hKey;
-        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, 
-            L"SYSTEM\\CurrentControlSet\\Enum\\ROOT\\IddSampleDriver", 
-            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-            RegCloseKey(hKey);
-            return true;
+        // Get all display devices (including offline/phantom)
+        HDEVINFO hDevInfo = SetupDiGetClassDevsW(
+            &displayClassGuid, 
+            nullptr, 
+            nullptr, 
+            DIGCF_ALLCLASSES  // Include offline devices
+        );
+        
+        if (hDevInfo == INVALID_HANDLE_VALUE) {
+            return false;
         }
         
-        // Method 2: Check for service entry (optional)
-        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-            L"SYSTEM\\CurrentControlSet\\Services\\IddSampleDriver",
-            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-            RegCloseKey(hKey);
-            return true;
+        SP_DEVINFO_DATA devInfoData = {};
+        devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+        
+        // Enumerate all devices
+        for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); i++) {
+            WCHAR hwid[4096] = {};
+            if (SetupDiGetDeviceRegistryPropertyW(
+                hDevInfo, 
+                &devInfoData, 
+                SPDRP_HARDWAREID,
+                nullptr, 
+                (BYTE*)hwid, 
+                sizeof(hwid), 
+                nullptr)) {
+                
+                // Check all hardware IDs (multi-string)
+                for (wchar_t* p = hwid; *p; p += wcslen(p) + 1) {
+                    // Use prefix match (case-insensitive) to handle both:
+                    // - ROOT\IddSampleDriver
+                    // - ROOT\IDDSAMPLEDRIVER\0000
+                    if (_wcsnicmp(p, L"ROOT\\IddSampleDriver", 20) == 0) {
+                        SetupDiDestroyDeviceInfoList(hDevInfo);
+                        return true;
+                    }
+                }
+            }
         }
         
+        SetupDiDestroyDeviceInfoList(hDevInfo);
         return false;
     }
 
@@ -1372,7 +1479,28 @@ namespace vdd {
         DISPLAY_DEVICEW displayDevice = {};
         displayDevice.cb = sizeof(DISPLAY_DEVICEW);
         
+        // Track unique adapters by DeviceString (not DeviceName) to avoid multiple outputs from same adapter
+        std::vector<std::wstring> seenDeviceStrings;
+        
         for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &displayDevice, 0); i++) {
+            // Use DeviceString to identify unique adapters
+            std::wstring deviceString(displayDevice.DeviceString);
+            
+            bool isDuplicate = false;
+            for (const auto& seen : seenDeviceStrings) {
+                if (seen == deviceString) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            
+            // Skip duplicates (multiple outputs from same adapter)
+            if (isDuplicate) {
+                continue;
+            }
+            
+            seenDeviceStrings.push_back(deviceString);
+            
             AdapterInfo adapter;
             
             // Convert wide string to narrow string
@@ -1387,7 +1515,7 @@ namespace vdd {
             adapter.isVirtual = (displayDevice.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER) != 0;
             
             // Get adapter ID
-            adapter.adapterId = i;
+            adapter.adapterId = static_cast<uint32_t>(adapters.size());
             adapter.outputCount = 1; // Assume 1 output per adapter for now
             
             adapters.push_back(adapter);
@@ -1696,5 +1824,6 @@ extern "C" {
 
 }
 
-/ /   T E S T   W R I T E  
+/ /   T E S T   W R I T E 
+ 
  

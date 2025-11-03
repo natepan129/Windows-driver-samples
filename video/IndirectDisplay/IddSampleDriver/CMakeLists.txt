@@ -59,10 +59,10 @@ target_link_libraries(vddsdk
 
 # Create the CLI tool executable
 add_executable(vddctl vddctl.cpp)
-target_link_libraries(vddctl vddsdk)
+target_link_libraries(vddctl vddsdk_static setupapi newdev advapi32)
 
 # Installation
-install(TARGETS vddsdk vdd_example vddctl performance_test
+install(TARGETS vddsdk vddctl
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib

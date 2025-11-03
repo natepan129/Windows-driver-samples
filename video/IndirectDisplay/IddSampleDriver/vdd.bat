@@ -7,3 +7,5 @@ REM          vdd install --inf x64\Release\IddSampleDriver\IddSampleDriver.inf
 
 build\bin\Release\vddctl.exe %*
 
+
+

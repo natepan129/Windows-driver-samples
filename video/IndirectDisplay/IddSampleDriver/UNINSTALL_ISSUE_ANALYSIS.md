@@ -256,3 +256,7 @@ Get-PnpDevice | Where-Object { $_.InstanceId -like '*Idd*' }
 3. **If failed:** Check if reboot required
 
 Would you like me to test the PowerShell method immediately?
+
+
+
+

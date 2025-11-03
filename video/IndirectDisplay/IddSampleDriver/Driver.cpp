@@ -854,3 +854,6 @@ NTSTATUS IndirectDeviceContext::UpdateDisplayConfiguration()
 #pragma endregion
 
 #pragma endregion
+
+
+#pragma endregion

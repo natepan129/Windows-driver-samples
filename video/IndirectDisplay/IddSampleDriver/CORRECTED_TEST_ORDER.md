@@ -122,3 +122,16 @@ You want me to:
 - **B. Create automated installation script**
 - **C. Fix SDK status detection issue**
 - **D. Other suggestions**
+
+1. **先安裝驅動** - 使用 `pnputil` 手動安裝
+2. **重新編譯** - 讓代碼修改生效
+3. **按順序測試** - 按照上述步驟測試
+
+您希望我：
+- **A. 幫您重新編譯項目**
+- **B. 創建自動化安裝腳本**
+- **C. 修復 SDK 狀態檢測問題**
+- **D. 其他建議**
+
+
+
