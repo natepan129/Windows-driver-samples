@@ -17,6 +17,7 @@ Environment:
 #include <windows.h>
 #include <setupapi.h>
 #include <devguid.h>
+#include <devpkey.h>
 #include <winioctl.h>
 #include <sstream>
 #include <algorithm>
@@ -873,11 +874,52 @@ namespace vdd {
     // Collect INF names for Driver Store cleanup (before removing devices)
     std::vector<std::wstring> infNamesToRemove;
     for (const auto& devInfo : devicesToRemove) {
-        WCHAR infName[MAX_PATH] = {};
-        if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), 
-            SPDRP_DRIVER, nullptr, (BYTE*)infName, sizeof(infName), nullptr)) {
-            // SPDRP_DRIVER format: "oemXX.inf"
-            infNamesToRemove.push_back(infName);
+        // Get published INF name (oemXX.inf) using SetupDiGetDeviceRegistryProperty
+        // Method 1: Try to get the driver info detail which includes INF path
+        SP_DRVINFO_DATA_W drvInfo = {};
+        drvInfo.cbSize = sizeof(SP_DRVINFO_DATA_W);
+        
+        bool gotInfName = false;
+        std::wstring infName;
+        
+        if (SetupDiGetDeviceInstallParamsW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), nullptr) == FALSE) {
+            SP_DEVINSTALL_PARAMS_W installParams = {};
+            installParams.cbSize = sizeof(SP_DEVINSTALL_PARAMS_W);
+            SetupDiSetDeviceInstallParamsW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), &installParams);
+        }
+        
+        if (SetupDiBuildDriverInfoList(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), SPDIT_COMPATDRIVER)) {
+            if (SetupDiEnumDriverInfoW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), SPDIT_COMPATDRIVER, 0, &drvInfo)) {
+                SP_DRVINFO_DETAIL_DATA_W detail = {};
+                detail.cbSize = sizeof(SP_DRVINFO_DETAIL_DATA_W);
+                DWORD requiredSize = 0;
+                
+                if (SetupDiGetDriverInfoDetailW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), 
+                    &drvInfo, &detail, sizeof(detail), &requiredSize) || ::GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+                    // Extract filename from full INF path
+                    std::wstring fullPath(detail.InfFileName);
+                    size_t lastSlash = fullPath.find_last_of(L"\\/");
+                    infName = (lastSlash != std::wstring::npos) ? fullPath.substr(lastSlash + 1) : fullPath;
+                    
+                    // Only accept oemXX.inf format to avoid accidents
+                    if (infName.find(L"oem") == 0 && infName.find(L".inf") != std::wstring::npos) {
+                        infNamesToRemove.push_back(infName);
+                        gotInfName = true;
+                    }
+                }
+            }
+            SetupDiDestroyDriverInfoList(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), SPDIT_COMPATDRIVER);
+        }
+        
+        // Fallback: Use SPDRP_DRIVER if we couldn't get the INF name above
+        if (!gotInfName) {
+            WCHAR driverKey[MAX_PATH] = {};
+            if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), 
+                SPDRP_DRIVER, nullptr, (BYTE*)driverKey, sizeof(driverKey), nullptr)) {
+                // SPDRP_DRIVER returns something like "{4d36e968-e325-11ce-bfc1-08002be10318}\0007"
+                // We try to extract INF from registry or use as-is for DiUninstallDriverW
+                infNamesToRemove.push_back(driverKey);
+            }
         }
     }
     
