@@ -72,6 +72,24 @@ static const struct IndirectSampleMonitor s_SampleMonitors[] =
             { 1024,  768,  60 },
         },
         0
+    },
+    // Third monitor - Generic 1920x1080 EDID (Checksum corrected)
+    {
+        {
+            0x00,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x00,0x22,0xF0,0x76,0x26,0x01,0x01,0x01,0x01,0x20,0x1B,0x01,
+            0x04,0xA5,0x34,0x20,0x78,0x3A,0xEE,0x91,0xA3,0x54,0x4C,0x99,0x26,0x0F,0x50,0x54,0xA5,0x6B,0x80,
+            0x81,0x40,0x81,0x80,0x95,0x00,0xA9,0x40,0xB3,0x00,0xD1,0xC0,0x01,0x01,0x01,0x01,0x02,0x3A,0x80,
+            0x18,0x71,0x38,0x2D,0x40,0x58,0x2C,0x45,0x00,0x09,0x25,0x21,0x00,0x00,0x1E,0x00,0x00,0x00,0xFF,
+            0x00,0x56,0x44,0x44,0x30,0x30,0x31,0x0A,0x20,0x20,0x20,0x20,0x20,0x20,0x00,0x00,0x00,0xFD,0x00,
+            0x32,0x4C,0x18,0x53,0x11,0x00,0x0A,0x20,0x20,0x20,0x20,0x20,0x20,0x00,0x00,0x00,0xFC,0x00,0x56,
+            0x44,0x44,0x20,0x44,0x69,0x73,0x70,0x6C,0x61,0x79,0x0A,0x20,0x00,0x0A
+        },
+        {
+            { 1920, 1080,  60 },
+            { 1280,  720,  60 },
+            { 1024,  768,  60 },
+        },
+        0
     }
 };
 
@@ -565,16 +583,21 @@ void IndirectDeviceContext::FinishInit(UINT ConnectorIndex)
     MonitorInfo.ConnectorIndex = ConnectorIndex;
 
     MonitorInfo.MonitorDescription.Size = sizeof(MonitorInfo.MonitorDescription);
-    MonitorInfo.MonitorDescription.Type = IDDCX_MONITOR_DESCRIPTION_TYPE_EDID;
     if (ConnectorIndex >= ARRAYSIZE(s_SampleMonitors))
     {
+        // No EDID available - set Type to 0 to trigger GetDefaultDescriptionModes callback
+        MonitorInfo.MonitorDescription.Type = (IDDCX_MONITOR_DESCRIPTION_TYPE)0;
         MonitorInfo.MonitorDescription.DataSize = 0;
         MonitorInfo.MonitorDescription.pData = nullptr;
+        DbgPrint("[IddSample] Monitor %d: Using default modes (no EDID)\n", ConnectorIndex);
     }
     else
     {
+        // EDID available - use TYPE_EDID
+        MonitorInfo.MonitorDescription.Type = IDDCX_MONITOR_DESCRIPTION_TYPE_EDID;
         MonitorInfo.MonitorDescription.DataSize = IndirectSampleMonitor::szEdidBlock;
         MonitorInfo.MonitorDescription.pData = const_cast<BYTE*>(s_SampleMonitors[ConnectorIndex].pEdidBlock);
+        DbgPrint("[IddSample] Monitor %d: Using EDID\n", ConnectorIndex);
     }
 
     // ==============================
@@ -597,6 +620,8 @@ void IndirectDeviceContext::FinishInit(UINT ConnectorIndex)
     NTSTATUS Status = IddCxMonitorCreate(m_Adapter, &MonitorCreate, &MonitorCreateOut);
     if (NT_SUCCESS(Status))
     {
+        DbgPrint("[IddSample] Monitor %d created successfully\n", ConnectorIndex);
+        
         // Create a new monitor context object and attach it to the Idd monitor object
         auto* pMonitorContextWrapper = WdfObjectGet_IndirectMonitorContextWrapper(MonitorCreateOut.MonitorObject);
         pMonitorContextWrapper->pContext = new IndirectMonitorContext(MonitorCreateOut.MonitorObject);
@@ -604,6 +629,18 @@ void IndirectDeviceContext::FinishInit(UINT ConnectorIndex)
         // Tell the OS that the monitor has been plugged in
         IDARG_OUT_MONITORARRIVAL ArrivalOut;
         Status = IddCxMonitorArrival(MonitorCreateOut.MonitorObject, &ArrivalOut);
+        if (NT_SUCCESS(Status))
+        {
+            DbgPrint("[IddSample] Monitor %d arrival reported successfully\n", ConnectorIndex);
+        }
+        else
+        {
+            DbgPrint("[IddSample] ERROR: Failed to report monitor %d arrival, Status=0x%X\n", ConnectorIndex, Status);
+        }
+    }
+    else
+    {
+        DbgPrint("[IddSample] ERROR: Failed to create monitor %d, Status=0x%X\n", ConnectorIndex, Status);
     }
 }
 
@@ -651,13 +688,23 @@ NTSTATUS IddSampleAdapterInitFinished(IDDCX_ADAPTER AdapterObject, const IDARG_I
     // This is called when the OS has finished setting up the adapter for use by the IddCx driver. It's now possible
     // to report attached monitors.
 
+    // DEBUG: Log initialization status
+    DbgPrint("[IddSample] AdapterInitFinished called, Status=0x%X\n", pInArgs->AdapterInitStatus);
+
     auto* pDeviceContextWrapper = WdfObjectGet_IndirectDeviceContextWrapper(AdapterObject);
     if (NT_SUCCESS(pInArgs->AdapterInitStatus))
     {
+        DbgPrint("[IddSample] Creating %d virtual monitors...\n", IDD_SAMPLE_MONITOR_COUNT);
         for (DWORD i = 0; i < IDD_SAMPLE_MONITOR_COUNT; i++)
         {
+            DbgPrint("[IddSample] Creating monitor %d...\n", i);
             pDeviceContextWrapper->pContext->FinishInit(i);
         }
+        DbgPrint("[IddSample] All monitors created successfully\n");
+    }
+    else
+    {
+        DbgPrint("[IddSample] ERROR: Adapter initialization failed!\n");
     }
 
     return STATUS_SUCCESS;
