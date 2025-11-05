@@ -77,6 +77,10 @@
     <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
     <IDDCX_VERSION_MINOR>4</IDDCX_VERSION_MINOR>
     <Driver_SpectreMitigation>Spectre</Driver_SpectreMitigation>
+    <!-- 禁用自动签名，支持手动商业签名流程 -->
+    <SignMode>Off</SignMode>
+    <TestSign>false</TestSign>
+    <Inf2CatBypass>false</Inf2CatBypass>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
