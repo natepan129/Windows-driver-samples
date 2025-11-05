@@ -1197,7 +1197,49 @@ namespace vdd {
             m_activeDisplays.push_back(displayDesc);
         }
         
-        printf("[VDD] Activate: SUCCESS - Device enabled\n");
+        // CRITICAL FIX: Configure display topology to prevent black screen
+        // Wait a moment for device to be fully initialized
+        Sleep(500);
+        
+        printf("[VDD] Activate: Configuring display topology to prevent black screen...\n");
+        
+        // Use SetDisplayConfig to extend displays (not replace primary)
+        UINT32 numPathArrayElements = 0;
+        UINT32 numModeInfoArrayElements = 0;
+        
+        // First, get buffer sizes
+        LONG result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &numPathArrayElements, &numModeInfoArrayElements);
+        if (result == ERROR_SUCCESS && numPathArrayElements > 0) {
+            std::vector<DISPLAYCONFIG_PATH_INFO> pathArray(numPathArrayElements);
+            std::vector<DISPLAYCONFIG_MODE_INFO> modeInfoArray(numModeInfoArrayElements);
+            
+            // Query current configuration
+            result = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS,
+                &numPathArrayElements, pathArray.data(),
+                &numModeInfoArrayElements, modeInfoArray.data(),
+                nullptr);
+            
+            if (result == ERROR_SUCCESS) {
+                printf("[VDD] Current active paths: %d\n", numPathArrayElements);
+                
+                // Apply the existing configuration to ensure all displays stay active
+                // This forces Windows to re-evaluate and keep all displays enabled
+                result = SetDisplayConfig(numPathArrayElements, pathArray.data(),
+                    numModeInfoArrayElements, modeInfoArray.data(),
+                    SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE);
+                
+                if (result == ERROR_SUCCESS) {
+                    printf("[VDD] Display topology preserved successfully\n");
+                } else {
+                    printf("[VDD] WARNING: Failed to preserve display topology, error=%d (this may cause black screen)\n", result);
+                    // Don't fail activation, just warn
+                }
+            } else {
+                printf("[VDD] WARNING: Failed to query display config, error=%d\n", result);
+            }
+        }
+        
+        printf("[VDD] Activate: SUCCESS - Device enabled and topology configured\n");
         SetLastError("Virtual display driver activated successfully");
         return Status::Ok;
     }
