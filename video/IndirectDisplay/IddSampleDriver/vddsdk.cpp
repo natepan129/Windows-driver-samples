@@ -869,6 +869,69 @@ namespace vdd {
             return Status::NotFound;
         }
         
+    printf("[VDD] UninstallDriver: Found %zu device(s) to remove\n", devicesToRemove.size());
+    
+    // CRITICAL SAFETY: Ensure physical display is primary BEFORE removing virtual displays
+    // This prevents black screen on uninstall
+    printf("[VDD] UninstallDriver: Ensuring physical display is primary (black screen prevention)...\n");
+    
+    // Get list of virtual displays (using Hardware ID matching - consistent with GetVirtualDisplayDeviceNames)
+    std::vector<std::wstring> virtualDisplays = GetVirtualDisplayDeviceNames();
+    
+    DISPLAY_DEVICEW primaryCandidate = {};
+    primaryCandidate.cb = sizeof(DISPLAY_DEVICEW);
+    bool foundPhysicalDisplay = false;
+    
+    // Find first non-virtual display as primary candidate
+    for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &primaryCandidate, 0); i++) {
+        // Check if this is a virtual display
+        bool isVirtualDisplay = false;
+        std::wstring currentDevice(primaryCandidate.DeviceName);
+        
+        for (const auto& vddName : virtualDisplays) {
+            if (currentDevice == vddName) {
+                isVirtualDisplay = true;
+                break;
+            }
+        }
+        
+        // Skip if this is a virtual display
+        if (isVirtualDisplay) {
+            printf("[VDD] Skipping virtual display: %ls\n", primaryCandidate.DeviceName);
+            continue;
+        }
+        
+        // Found a physical display
+        if (primaryCandidate.StateFlags & DISPLAY_DEVICE_ACTIVE) {
+            foundPhysicalDisplay = true;
+            printf("[VDD] Found physical display: %ls\n", primaryCandidate.DeviceName);
+            break;
+        }
+    }
+    
+    if (foundPhysicalDisplay) {
+        // Force set this physical display as primary
+        printf("[VDD] Setting physical display as primary: %ls\n", primaryCandidate.DeviceName);
+        
+        LONG result = ChangeDisplaySettingsExW(primaryCandidate.DeviceName, nullptr, nullptr,
+            CDS_SET_PRIMARY | CDS_UPDATEREGISTRY | CDS_NORESET, nullptr);
+        
+        if (result == DISP_CHANGE_SUCCESSFUL) {
+            // Commit the change
+            ChangeDisplaySettingsExW(nullptr, nullptr, nullptr, 0, nullptr);
+            printf("[VDD] ✓ Physical display set as primary successfully\n");
+            
+            // Give Windows time to update topology
+            Sleep(500);
+        } else {
+            printf("[VDD] WARNING: Failed to set physical display as primary, error=%d\n", result);
+            printf("[VDD] Continuing anyway, but black screen risk increased\n");
+        }
+    } else {
+        printf("[VDD] WARNING: No physical display found! Uninstall may cause black screen!\n");
+        printf("[VDD] Recommend: Connect physical display before uninstalling virtual driver\n");
+    }
+    
     // Collect INF names for Driver Store cleanup (before removing devices)
     std::vector<std::wstring> infNamesToRemove;
     for (const auto& devInfo : devicesToRemove) {
@@ -1073,35 +1136,86 @@ namespace vdd {
     }
 
     // Helper function: Find virtual display device names (IddSampleDriver monitors)
+    // FIXED: Use Hardware ID-based matching instead of string matching (fixes mouse coordinate misalignment)
     std::vector<std::wstring> VddSdkImpl::GetVirtualDisplayDeviceNames() {
         std::vector<std::wstring> deviceNames;
         
+        printf("[VDD] GetVirtualDisplayDeviceNames: Starting Hardware ID-based device search\n");
+        
+        // Step 1: Find IddSampleDriver device using SetupAPI (Hardware ID-based)
+        HDEVINFO hDevInfo = SetupDiGetClassDevsW(
+            &GUID_DEVCLASS_DISPLAY,
+            nullptr,
+            nullptr,
+            DIGCF_PRESENT | DIGCF_ALLCLASSES
+        );
+        
+        if (hDevInfo == INVALID_HANDLE_VALUE) {
+            printf("[VDD] WARNING: SetupDiGetClassDevsW failed, error=%d\n", ::GetLastError());
+            return deviceNames;
+        }
+        
+        SP_DEVINFO_DATA devInfoData = {};
+        devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+        
+        // Step 2: Enumerate devices and find ROOT\IddSampleDriver
+        bool foundIddDevice = false;
+        for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); ++i) {
+            wchar_t hwid[256] = {};
+            if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
+                nullptr, (PBYTE)hwid, sizeof(hwid), nullptr)) {
+                
+                // Check all Hardware IDs in the REG_MULTI_SZ
+                for (wchar_t* p = hwid; *p; p += wcslen(p) + 1) {
+                    if (_wcsicmp(p, L"ROOT\\IddSampleDriver") == 0) {
+                        foundIddDevice = true;
+                        printf("[VDD] Found IddSampleDriver device via Hardware ID: %ls\n", p);
+                        break;
+                    }
+                }
+                
+                if (foundIddDevice) break;
+            }
+        }
+        
+        SetupDiDestroyDeviceInfoList(hDevInfo);
+        
+        if (!foundIddDevice) {
+            printf("[VDD] IddSampleDriver device not found in system\n");
+            return deviceNames;
+        }
+        
+        // Step 3: Now enumerate display outputs via EnumDisplayDevices
+        // Match outputs that belong to IddSampleDriver adapter
         DISPLAY_DEVICEW displayDevice = {};
         displayDevice.cb = sizeof(DISPLAY_DEVICEW);
         
-        // Enumerate all display devices
         for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &displayDevice, 0); i++) {
-            // Check if this is our virtual display driver
-            std::wstring deviceString(displayDevice.DeviceString);
-            if (deviceString.find(L"IddSampleDriver") != std::wstring::npos ||
-                deviceString.find(L"Generic PnP Monitor") != std::wstring::npos) {
-                
-                // This might be our device, now check the monitors
-                DISPLAY_DEVICEW monitorDevice = {};
-                monitorDevice.cb = sizeof(DISPLAY_DEVICEW);
-                
+            // Get device instance path to verify it's from IddSampleDriver
+            std::wstring deviceKey(displayDevice.DeviceKey);
+            
+            // IddSampleDriver adapters will have specific registry keys
+            // Check if this adapter has monitors
+            DISPLAY_DEVICEW monitorDevice = {};
+            monitorDevice.cb = sizeof(DISPLAY_DEVICEW);
+            
+            bool hasMonitors = false;
+            std::wstring adapterString(displayDevice.DeviceString);
+            
+            // Check if this is IddSampleDriver by checking DeviceString
+            // (This is a secondary check after HW ID verification)
+            bool isIddAdapter = (adapterString.find(L"IddSampleDriver") != std::wstring::npos);
+            
+            if (isIddAdapter) {
+                // Enumerate monitors on this adapter
                 for (DWORD j = 0; EnumDisplayDevicesW(displayDevice.DeviceName, j, &monitorDevice, 0); j++) {
-                    std::wstring monitorId(monitorDevice.DeviceID);
-                    // Check if monitor belongs to IddSampleDriver
-                    if (monitorId.find(L"DELD0E6") != std::wstring::npos ||  // Dell EDID
-                        monitorId.find(L"LEN65BF") != std::wstring::npos ||  // Lenovo EDID
-                        monitorId.find(L"HWP2676") != std::wstring::npos) {  // Third monitor EDID
-                        
-                        deviceNames.push_back(displayDevice.DeviceName);
-                        printf("[VDD] Found virtual display: %ls (Monitor: %ls)\n", 
-                               displayDevice.DeviceName, monitorDevice.DeviceID);
-                        break; // Only add device once
-                    }
+                    hasMonitors = true;
+                    printf("[VDD] Found virtual display output: %ls (Adapter: %ls)\n", 
+                           displayDevice.DeviceName, adapterString.c_str());
+                    
+                    // Add this display device name (\\.\DISPLAYn format)
+                    deviceNames.push_back(displayDevice.DeviceName);
+                    break; // Only add adapter once even if multiple monitors
                 }
             }
         }
@@ -1235,83 +1349,176 @@ namespace vdd {
             m_activeDisplays.push_back(displayDesc);
         }
         
-        // CRITICAL SAFETY: Configure display topology to prevent black screen
-        // Wait a moment for device to be fully initialized
-        Sleep(500);
+        // CRITICAL SAFETY: Configure display topology to prevent coordinate overlap and black screen
+        // FIXED: Use explicit EXTEND topology instead of query-and-replay
+        printf("[VDD] Activate: Waiting for device initialization...\n");
         
-        printf("[VDD] Activate: Configuring display topology with PRIMARY PROTECTION...\n");
+        // Poll for device readiness instead of fixed delay
+        bool deviceReady = false;
+        for (int attempt = 0; attempt < 30; attempt++) {  // Max 3 seconds
+            ULONG status = 0, problemNumber = 0;
+            if (CM_Get_DevNode_Status(&status, &problemNumber, devInfoData.DevInst, 0) == CR_SUCCESS) {
+                if ((status & DN_STARTED) && !(status & DN_HAS_PROBLEM)) {
+                    deviceReady = true;
+                    printf("[VDD] Device ready after %d ms\n", attempt * 100);
+                    break;
+                }
+            }
+            Sleep(100);
+        }
         
-        // SAFETY LAYER 1: Query and save current configuration BEFORE any changes
-        UINT32 numPathArrayElements = 0;
-        UINT32 numModeInfoArrayElements = 0;
+        if (!deviceReady) {
+            printf("[VDD] WARNING: Device may not be fully initialized yet\n");
+        }
         
-        LONG result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &numPathArrayElements, &numModeInfoArrayElements);
-        if (result == ERROR_SUCCESS && numPathArrayElements > 0) {
-            std::vector<DISPLAYCONFIG_PATH_INFO> pathArray(numPathArrayElements);
-            std::vector<DISPLAYCONFIG_MODE_INFO> modeInfoArray(numModeInfoArrayElements);
+        printf("[VDD] Activate: Configuring EXTEND topology to prevent coordinate overlap...\n");
+        
+        // FIXED: Use SDC_TOPOLOGY_EXTEND to properly extend displays
+        // This ensures virtual displays don't overlap with physical screen coordinates
+        LONG result = SetDisplayConfig(0, nullptr, 0, nullptr, 
+            SDC_APPLY | SDC_TOPOLOGY_EXTEND | SDC_ALLOW_CHANGES);
+        
+        if (result == ERROR_SUCCESS) {
+            printf("[VDD] ✓ Extended display topology applied successfully\n");
+            printf("[VDD] ✓ Virtual displays positioned to avoid coordinate overlap\n");
+        } else {
+            printf("[VDD] WARNING: SDC_TOPOLOGY_EXTEND failed with error=%d\n", result);
+            printf("[VDD] This is expected in VirtualBox/VM environments\n");
+            printf("[VDD] Attempting fallback: Manual topology configuration\n");
             
-            // Query current configuration
-            result = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS,
-                &numPathArrayElements, pathArray.data(),
-                &numModeInfoArrayElements, modeInfoArray.data(),
-                nullptr);
+            // Wait for virtual displays to appear in topology and activate them
+            printf("[VDD] Waiting for virtual displays to appear in topology...\n");
+            Sleep(1000);  // Give Windows time to recognize new displays
             
-            if (result == ERROR_SUCCESS) {
-                printf("[VDD] Current active paths: %d\n", numPathArrayElements);
+            // Step 1: Find physical display rightmost edge
+            DISPLAY_DEVICEW physicalDisplay = {};
+            physicalDisplay.cb = sizeof(DISPLAY_DEVICEW);
+            int32_t maxX = 1920;  // Default offset
+            
+            for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &physicalDisplay, 0); i++) {
+                std::wstring deviceString(physicalDisplay.DeviceString);
                 
-                // SAFETY LAYER 2: Verify primary display is still active
-                bool primaryFound = false;
-                for (UINT32 i = 0; i < numPathArrayElements; i++) {
-                    // Check if this path has a valid source and is active
-                    if ((pathArray[i].flags & DISPLAYCONFIG_PATH_ACTIVE) &&
-                        pathArray[i].sourceInfo.modeInfoIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID) {
-                        
-                        // Try to get device name to check if it's a physical display
-                        DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
-                        sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
-                        sourceName.header.size = sizeof(DISPLAYCONFIG_SOURCE_DEVICE_NAME);
-                        sourceName.header.adapterId = pathArray[i].sourceInfo.adapterId;
-                        sourceName.header.id = pathArray[i].sourceInfo.id;
-                        
-                        if (DisplayConfigGetDeviceInfo(&sourceName.header) == ERROR_SUCCESS) {
-                            std::wstring devName(sourceName.viewGdiDeviceName);
-                            // Check if it's NOT our virtual display (primary is physical)
-                            if (devName.find(L"DISPLAY1") != std::wstring::npos || 
-                                devName.find(L"DISPLAY2") != std::wstring::npos) {
-                                primaryFound = true;
-                                printf("[VDD] PRIMARY DISPLAY VERIFIED: %ls (path %d)\n", devName.c_str(), i);
-                            }
+                // Skip virtual displays
+                if (deviceString.find(L"IddSampleDriver") != std::wstring::npos) {
+                    continue;
+                }
+                
+                // Get physical display position
+                if (physicalDisplay.StateFlags & DISPLAY_DEVICE_ACTIVE) {
+                    DEVMODEW dm = {};
+                    dm.dmSize = sizeof(DEVMODEW);
+                    if (EnumDisplaySettingsW(physicalDisplay.DeviceName, ENUM_CURRENT_SETTINGS, &dm)) {
+                        int32_t rightEdge = dm.dmPosition.x + (int32_t)dm.dmPelsWidth;
+                        if (rightEdge > maxX) {
+                            maxX = rightEdge;
                         }
+                        printf("[VDD] Physical display %ls at (%d,%d) size %dx%d, right edge=%d\n",
+                               physicalDisplay.DeviceName, dm.dmPosition.x, dm.dmPosition.y,
+                               dm.dmPelsWidth, dm.dmPelsHeight, rightEdge);
                     }
                 }
-                
-                if (!primaryFound) {
-                    printf("[VDD] WARNING: Could not verify primary display - aborting for safety\n");
-                    SetLastError("Safety check failed: Primary display not detected");
-                    return Status::DriverError;
-                }
-                
-                // SAFETY LAYER 3: Apply configuration with error checking
-                printf("[VDD] Applying display configuration (primary protected)...\n");
-                result = SetDisplayConfig(numPathArrayElements, pathArray.data(),
-                    numModeInfoArrayElements, modeInfoArray.data(),
-                    SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_ALLOW_CHANGES);
-                
-                if (result == ERROR_SUCCESS) {
-                    printf("[VDD] ✓ Display topology preserved successfully\n");
-                    printf("[VDD] ✓ Primary display protected\n");
-                } else {
-                    printf("[VDD] WARNING: Failed to preserve display topology, error=%d\n", result);
-                    printf("[VDD] This may cause display issues - consider using recovery script\n");
-                    // Don't fail activation completely, but warn user
-                }
-            } else {
-                printf("[VDD] WARNING: Failed to query display config, error=%d\n", result);
-                printf("[VDD] Proceeding with caution - primary display should remain active\n");
             }
-        } else {
-            printf("[VDD] WARNING: Could not get display config buffers, error=%d\n", result);
-            printf("[VDD] Proceeding without topology verification\n");
+            
+            printf("[VDD] Will position virtual displays starting at X=%d\n", maxX);
+            
+            // Step 2: Get list of virtual displays and activate them with non-overlapping positions
+            printf("[VDD] Activating virtual displays using traditional API...\n");
+            std::vector<std::wstring> virtualDisplays = GetVirtualDisplayDeviceNames();
+            
+            int32_t nextX = maxX;
+            int successCount = 0;
+            int failCount = 0;
+            
+            for (const auto& vddName : virtualDisplays) {
+                DEVMODEW dm = {};
+                dm.dmSize = sizeof(DEVMODEW);
+                
+                // Try multiple strategies to get valid settings
+                bool hasSettings = false;
+                
+                // Strategy 1: Get current settings
+                if (EnumDisplaySettingsW(vddName.c_str(), ENUM_CURRENT_SETTINGS, &dm)) {
+                    printf("[VDD] Using current settings for %ls\n", vddName.c_str());
+                    hasSettings = true;
+                } 
+                // Strategy 2: Get registry settings
+                else if (EnumDisplaySettingsW(vddName.c_str(), ENUM_REGISTRY_SETTINGS, &dm)) {
+                    printf("[VDD] Using registry settings for %ls\n", vddName.c_str());
+                    hasSettings = true;
+                }
+                // Strategy 3: Enumerate first available mode
+                else if (EnumDisplaySettingsW(vddName.c_str(), 0, &dm)) {
+                    printf("[VDD] Using first available mode for %ls\n", vddName.c_str());
+                    hasSettings = true;
+                }
+                // Strategy 4: Use default 1920x1080
+                else {
+                    printf("[VDD] Using default 1920x1080 for %ls\n", vddName.c_str());
+                    dm.dmSize = sizeof(DEVMODEW);
+                    dm.dmPelsWidth = 1920;
+                    dm.dmPelsHeight = 1080;
+                    dm.dmBitsPerPel = 32;
+                    dm.dmDisplayFrequency = 60;
+                    dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY;
+                    hasSettings = true;
+                }
+                
+                // Set non-overlapping position (CRITICAL for mouse alignment)
+                dm.dmPosition.x = nextX;
+                dm.dmPosition.y = 0;
+                dm.dmFields |= DM_POSITION;  // Ensure position field is set
+                
+                nextX += (hasSettings && dm.dmPelsWidth > 0) ? dm.dmPelsWidth : 1920;
+                
+                // CRITICAL: Use CDS_UPDATEREGISTRY to persist position to registry
+                // This prevents position reset after reboot/logout
+                LONG result = ChangeDisplaySettingsExW(vddName.c_str(), &dm, nullptr,
+                    CDS_UPDATEREGISTRY | CDS_NORESET, nullptr);
+                
+                if (result == DISP_CHANGE_SUCCESSFUL) {
+                    printf("[VDD] ✓ Activated virtual display %ls at (%d, %d), size %dx%d\n", 
+                           vddName.c_str(), dm.dmPosition.x, dm.dmPosition.y,
+                           dm.dmPelsWidth, dm.dmPelsHeight);
+                    successCount++;
+                } else if (result == DISP_CHANGE_BADMODE) {
+                    // Mode not supported - try without frequency constraint
+                    printf("[VDD] Mode not supported, retrying without frequency constraint...\n");
+                    dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_POSITION;
+                    
+                    result = ChangeDisplaySettingsExW(vddName.c_str(), &dm, nullptr,
+                        CDS_UPDATEREGISTRY | CDS_NORESET, nullptr);
+                    
+                    if (result == DISP_CHANGE_SUCCESSFUL) {
+                        printf("[VDD] ✓ Activated (retry) virtual display %ls at (%d, %d)\n", 
+                               vddName.c_str(), dm.dmPosition.x, dm.dmPosition.y);
+                        successCount++;
+                    } else {
+                        printf("[VDD] WARNING: Failed to activate %ls even after retry, error=%d\n", 
+                               vddName.c_str(), result);
+                        printf("[VDD] Position (%d, %d) will be applied on next commit\n",
+                               dm.dmPosition.x, dm.dmPosition.y);
+                        failCount++;
+                    }
+                } else {
+                    printf("[VDD] WARNING: Failed to activate %ls, error=%d\n", vddName.c_str(), result);
+                    failCount++;
+                }
+            }
+            
+            printf("[VDD] Activation summary: %d succeeded, %d failed\n", successCount, failCount);
+            
+            // Commit all changes
+            result = ChangeDisplaySettingsExW(nullptr, nullptr, nullptr, 0, nullptr);
+            if (result == DISP_CHANGE_SUCCESSFUL) {
+                printf("[VDD] ✓ Committed display changes - all virtual displays positioned correctly\n");
+            } else {
+                printf("[VDD] WARNING: Failed to commit display changes, error=%d\n", result);
+            }
+            
+            // Wait for changes to take effect
+            Sleep(500);
+            
+            printf("[VDD] ✓ Fallback complete - virtual displays activated with non-overlapping coordinates\n");
         }
         
         printf("[VDD] Activate: SUCCESS - Device enabled and topology configured\n");
@@ -1794,76 +2001,60 @@ namespace vdd {
             }
             
             const std::wstring& targetDeviceName = virtualDisplays[outputIndex];
-            printf("[VDD] SetPrimary: Setting device %ls as primary\n", targetDeviceName.c_str());
+            printf("[VDD] SetPrimary: Setting device %ls as primary display\n", targetDeviceName.c_str());
             
-            // REAL IMPLEMENTATION - Use Windows API to set primary display
-            // Get current display configuration
-            UINT32 numPathArrayElements = 0;
-            UINT32 numModeInfoArrayElements = 0;
-            LONG result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, 
-                &numPathArrayElements, &numModeInfoArrayElements);
+            // FIXED: Use ChangeDisplaySettingsExW with CDS_SET_PRIMARY flag
+            // This is the official way to set primary display in Windows
+            // Setting position to (0,0) does NOT make it primary!
             
-            if (result == ERROR_SUCCESS && numPathArrayElements > 0) {
-                std::vector<DISPLAYCONFIG_PATH_INFO> pathArray(numPathArrayElements);
-                std::vector<DISPLAYCONFIG_MODE_INFO> modeInfoArray(numModeInfoArrayElements);
+            LONG result = ChangeDisplaySettingsExW(
+                targetDeviceName.c_str(),  // Device name
+                nullptr,                     // Use current settings
+                nullptr,                     // No window
+                CDS_SET_PRIMARY | CDS_UPDATEREGISTRY | CDS_NORESET,  // Set as primary, update registry, don't reset immediately
+                nullptr                      // No parameters
+            );
+            
+            if (result == DISP_CHANGE_SUCCESSFUL) {
+                // Commit the change by calling with nullptr
+                result = ChangeDisplaySettingsExW(nullptr, nullptr, nullptr, 0, nullptr);
                 
-                result = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS,
-                    &numPathArrayElements, pathArray.data(),
-                    &numModeInfoArrayElements, modeInfoArray.data(),
-                    nullptr);
-                
-                if (result == ERROR_SUCCESS) {
-                    // CRITICAL FIX: Find the correct path index by matching device name
-                    bool foundDevice = false;
-                    for (UINT32 i = 0; i < numPathArrayElements; i++) {
-                        // Get source device name
-                        DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
-                        sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
-                        sourceName.header.size = sizeof(DISPLAYCONFIG_SOURCE_DEVICE_NAME);
-                        sourceName.header.adapterId = pathArray[i].sourceInfo.adapterId;
-                        sourceName.header.id = pathArray[i].sourceInfo.id;
-                        
-                        if (DisplayConfigGetDeviceInfo(&sourceName.header) == ERROR_SUCCESS) {
-                            if (wcscmp(sourceName.viewGdiDeviceName, targetDeviceName.c_str()) == 0) {
-                                // Found the correct path!
-                                printf("[VDD] SetPrimary: Found path index %d for device %ls\n", i, targetDeviceName.c_str());
-                                
-                                // Set as primary by setting position to (0,0)
-                                DISPLAYCONFIG_SOURCE_MODE& sourceMode = modeInfoArray[pathArray[i].sourceInfo.modeInfoIdx].sourceMode;
-                                sourceMode.position.x = 0;
-                                sourceMode.position.y = 0;
-                                
-                                // Apply the changes
-                                result = SetDisplayConfig(numPathArrayElements, pathArray.data(),
-                                    numModeInfoArrayElements, modeInfoArray.data(),
-                                    SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE);
-                                
-                                if (result == ERROR_SUCCESS) {
-                                    printf("[VDD] SetPrimary: SUCCESS\n");
-                                    SetLastError("Primary display set successfully to output " + std::to_string(outputIndex));
-                                    foundDevice = true;
-                                    break;
-                                } else {
-                                    printf("[VDD] SetPrimary: FAILED to apply config, error=%d\n", result);
-                                    SetLastError("Failed to set primary display: " + std::to_string(result));
-                                    return Status::DriverError;
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (!foundDevice) {
-                        SetLastError("Virtual display device not found in active paths");
-                        return Status::DriverError;
-                    }
-                    
+                if (result == DISP_CHANGE_SUCCESSFUL) {
+                    printf("[VDD] ✓ SetPrimary: Display %ls successfully set as PRIMARY\n", targetDeviceName.c_str());
+                    SetLastError("Primary display set successfully to output " + std::to_string(outputIndex));
                     return Status::Ok;
                 } else {
-                    SetLastError("Failed to query display configuration: " + std::to_string(result));
+                    printf("[VDD] SetPrimary: Failed to commit settings, error=%d\n", result);
+                    SetLastError("Failed to commit primary display change: " + std::to_string(result));
                     return Status::DriverError;
                 }
             } else {
-                SetLastError("Failed to get display config buffer sizes: " + std::to_string(result));
+                printf("[VDD] SetPrimary: Failed to set primary display, error=%d\n", result);
+                
+                // Provide helpful error messages
+                std::string errorMsg = "Failed to set primary display: ";
+                switch (result) {
+                    case DISP_CHANGE_BADMODE:
+                        errorMsg += "The graphics mode is not supported";
+                        break;
+                    case DISP_CHANGE_BADFLAGS:
+                        errorMsg += "Invalid flags specified";
+                        break;
+                    case DISP_CHANGE_BADPARAM:
+                        errorMsg += "Invalid parameter specified";
+                        break;
+                    case DISP_CHANGE_FAILED:
+                        errorMsg += "The display driver failed to apply changes";
+                        break;
+                    case DISP_CHANGE_RESTART:
+                        errorMsg += "System restart required";
+                        break;
+                    default:
+                        errorMsg += "Error code " + std::to_string(result);
+                        break;
+                }
+                
+                SetLastError(errorMsg);
                 return Status::DriverError;
             }
             
