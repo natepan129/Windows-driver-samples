@@ -1258,6 +1258,45 @@ namespace vdd {
             return Status::DriverError;
         }
         
+        // CRITICAL SAFETY: Ensure at least one physical display is present before activating virtual displays
+        // This prevents lock-screen/sign-in issues on laptops with lid closed, VMs, RDP sessions
+        printf("[VDD] Activate: Checking for physical display (safety requirement)...\n");
+        
+        std::vector<std::wstring> existingVirtualDisplays = GetVirtualDisplayDeviceNames();
+        DISPLAY_DEVICEW dd = {};
+        dd.cb = sizeof(DISPLAY_DEVICEW);
+        bool hasPhysical = false;
+        
+        for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &dd, 0); ++i) {
+            // Check if this is NOT a virtual display
+            bool isVirtual = false;
+            std::wstring deviceName(dd.DeviceName);
+            for (const auto& vddName : existingVirtualDisplays) {
+                if (deviceName == vddName) {
+                    isVirtual = true;
+                    break;
+                }
+            }
+            
+            // Found an active non-virtual display
+            if (!isVirtual && (dd.StateFlags & DISPLAY_DEVICE_ACTIVE)) {
+                hasPhysical = true;
+                printf("[VDD] Found physical display: %ls\n", dd.DeviceName);
+                break;
+            }
+        }
+        
+        if (!hasPhysical) {
+            printf("[VDD] ERROR: No physical display found!\n");
+            printf("[VDD] Refusing to activate virtual displays without a physical display present.\n");
+            printf("[VDD] This safety check prevents lock-screen and sign-in issues.\n");
+            printf("[VDD] Please connect a physical display before activating virtual displays.\n");
+            SetLastError("No physical display present; refusing to modify topology for safety");
+            return Status::DriverError;
+        }
+        
+        printf("[VDD] ✓ Physical display check passed\n");
+        
         // Real activation using SetupAPI to enable the device
         // Get device info set for our driver
         HDEVINFO hDevInfo = SetupDiGetClassDevsW(
@@ -1284,11 +1323,15 @@ namespace vdd {
             if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
                 nullptr, (PBYTE)hwid, sizeof(hwid), nullptr)) {
                 
-                if (_wcsicmp(hwid, L"ROOT\\IddSampleDriver") == 0) {
-                    deviceFound = true;
-                    printf("[VDD] Found device: %ls\n", hwid);
-                    break;
+                // SPDRP_HARDWAREID is REG_MULTI_SZ, iterate through each string
+                for (wchar_t* p = hwid; *p; p += wcslen(p) + 1) {
+                    if (_wcsicmp(p, L"ROOT\\IddSampleDriver") == 0) {
+                        deviceFound = true;
+                        printf("[VDD] Found device: %ls\n", p);
+                        break;
+                    }
                 }
+                if (deviceFound) break;
             }
         }
         
@@ -1563,11 +1606,15 @@ namespace vdd {
             if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
                 nullptr, (PBYTE)hwid, sizeof(hwid), nullptr)) {
                 
-                if (_wcsicmp(hwid, L"ROOT\\IddSampleDriver") == 0) {
-                    deviceFound = true;
-                    printf("[VDD] Found device: %ls\n", hwid);
-                    break;
+                // SPDRP_HARDWAREID is REG_MULTI_SZ, iterate through each string
+                for (wchar_t* p = hwid; *p; p += wcslen(p) + 1) {
+                    if (_wcsicmp(p, L"ROOT\\IddSampleDriver") == 0) {
+                        deviceFound = true;
+                        printf("[VDD] Found device: %ls\n", p);
+                        break;
+                    }
                 }
+                if (deviceFound) break;
             }
         }
         
@@ -2001,7 +2048,20 @@ namespace vdd {
             }
             
             const std::wstring& targetDeviceName = virtualDisplays[outputIndex];
-            printf("[VDD] SetPrimary: Setting device %ls as primary display\n", targetDeviceName.c_str());
+            
+            // CRITICAL SAFETY: Prevent setting virtual display as primary by default
+            // This can cause lock-screen/sign-in issues on laptops, VMs, and RDP sessions
+            // Users must explicitly allow this with a configuration flag if needed
+            printf("[VDD] SetPrimary: WARNING - Attempting to set virtual display as primary\n");
+            printf("[VDD] SetPrimary: Target device: %ls\n", targetDeviceName.c_str());
+            printf("[VDD] SetPrimary: This operation can cause lock-screen and sign-in issues!\n");
+            printf("[VDD] SetPrimary: Setting virtual display as primary is NOT RECOMMENDED.\n");
+            printf("[VDD] SetPrimary: If you encounter login issues, press Ctrl+Alt+Del and use Task Manager\n");
+            printf("[VDD] SetPrimary: to run 'vddctl deactivate' or reboot to safe mode.\n");
+            
+            // For now, we ALLOW it but with strong warnings
+            // In production, consider adding a --force flag requirement
+            printf("[VDD] SetPrimary: Proceeding with user acknowledgment of risks...\n");
             
             // FIXED: Use ChangeDisplaySettingsExW with CDS_SET_PRIMARY flag
             // This is the official way to set primary display in Windows
