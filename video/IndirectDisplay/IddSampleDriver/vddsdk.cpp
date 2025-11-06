@@ -269,7 +269,7 @@ namespace vdd {
         
         // FIXED: Auto-create instance for standalone display operations
         VddSdkImpl* impl = GetOrCreateInstance_Locked();
-        
+
         return impl->SetMode(outputIndex, mode);
     }
 
@@ -278,7 +278,7 @@ namespace vdd {
         
         // FIXED: Auto-create instance for standalone display operations
         VddSdkImpl* impl = GetOrCreateInstance_Locked();
-        
+
         return impl->SetLocation(outputIndex, rect);
     }
 
@@ -287,7 +287,7 @@ namespace vdd {
         
         // FIXED: Auto-create instance for standalone display operations
         VddSdkImpl* impl = GetOrCreateInstance_Locked();
-        
+
         return impl->SetPrimary(outputIndex);
     }
 
@@ -628,7 +628,7 @@ namespace vdd {
         
         printf("[VDD] Step 5: Checking for existing device...\n");
         {
-            HDEVINFO hCheck = SetupDiGetClassDevsW(&displayClassGuid, nullptr, nullptr, DIGCF_ALLCLASSES);
+            HDEVINFO hCheck = SetupDiGetClassDevsW(&displayClassGuid, nullptr, nullptr, DIGCF_PRESENT);
             if (hCheck != INVALID_HANDLE_VALUE) {
                 SP_DEVINFO_DATA dev{}; dev.cbSize = sizeof(dev);
                 for (DWORD i = 0; SetupDiEnumDeviceInfo(hCheck, i, &dev); ++i) {
@@ -1035,7 +1035,7 @@ namespace vdd {
             for (const auto& infName : infNamesToRemove) {
                 BOOL needReboot = FALSE;
                 printf("[VDD] Removing package: %ls\n", infName.c_str());
-                if (DiUninstallDriverW(nullptr, infName.c_str(), DIURFLAG_NO_REMOVE_INF, &needReboot)) {
+                if (DiUninstallDriverW(nullptr, infName.c_str(), 0, &needReboot)) {
                     printf("[VDD] Successfully removed package: %ls\n", infName.c_str());
                 } else {
                     DWORD err = ::GetLastError();
@@ -1098,7 +1098,7 @@ namespace vdd {
                     // - ROOT\IDDSAMPLEDRIVER\0000
                     if (_wcsnicmp(p, L"ROOT\\IddSampleDriver", 20) == 0) {
                         SetupDiDestroyDeviceInfoList(hDevInfo);
-                        return true;
+            return true;
                     }
                 }
             }
@@ -1147,7 +1147,7 @@ namespace vdd {
             &GUID_DEVCLASS_DISPLAY,
             nullptr,
             nullptr,
-            DIGCF_PRESENT | DIGCF_ALLCLASSES
+            DIGCF_PRESENT
         );
         
         if (hDevInfo == INVALID_HANDLE_VALUE) {
@@ -1303,7 +1303,7 @@ namespace vdd {
             &GUID_DEVCLASS_DISPLAY,
             nullptr,
             nullptr,
-            DIGCF_PRESENT | DIGCF_ALLCLASSES
+            DIGCF_PRESENT
         );
         
         if (hDevInfo == INVALID_HANDLE_VALUE) {
@@ -1386,12 +1386,12 @@ namespace vdd {
         m_activeDisplayCount = count;
         
         // Create display descriptors for tracking
-        for (uint32_t i = 0; i < count; ++i) {
-            VirtualDisplayDesc displayDesc = desc;
-            displayDesc.name = desc.name + "_" + std::to_string(i + 1);
-            m_activeDisplays.push_back(displayDesc);
-        }
-        
+            for (uint32_t i = 0; i < count; ++i) {
+                VirtualDisplayDesc displayDesc = desc;
+                displayDesc.name = desc.name + "_" + std::to_string(i + 1);
+                m_activeDisplays.push_back(displayDesc);
+            }
+            
         // CRITICAL SAFETY: Configure display topology to prevent coordinate overlap and black screen
         // FIXED: Use explicit EXTEND topology instead of query-and-replay
         printf("[VDD] Activate: Waiting for device initialization...\n");
@@ -1586,7 +1586,7 @@ namespace vdd {
             &GUID_DEVCLASS_DISPLAY,
             nullptr,
             nullptr,
-            DIGCF_PRESENT | DIGCF_ALLCLASSES
+            DIGCF_PRESENT
         );
         
         if (hDevInfo == INVALID_HANDLE_VALUE) {
@@ -1675,7 +1675,7 @@ namespace vdd {
             &GUID_DEVCLASS_DISPLAY,
             nullptr,
             nullptr,
-            DIGCF_PRESENT | DIGCF_ALLCLASSES
+            DIGCF_PRESENT
         );
         
         if (hDevInfo == INVALID_HANDLE_VALUE) {
@@ -1894,7 +1894,7 @@ namespace vdd {
             printf("[VDD] SetMode: This may indicate the display is not active in Windows display topology\n");
             printf("[VDD] SetMode: Try: Open Windows Display Settings > Detect/Extend displays\n");
             SetLastError("Failed to change display mode. Display may not be active in Windows topology.");
-            return Status::DriverError;
+                return Status::DriverError;
             
         } catch (const std::exception& e) {
             SetLastError("Failed to set display mode: " + std::string(e.what()));
@@ -1945,21 +1945,21 @@ namespace vdd {
                    targetDeviceName.c_str(), rect.x, rect.y);
             
             // REAL IMPLEMENTATION - Use Windows API to set display position
-            // Get current display configuration
-            UINT32 numPathArrayElements = 0;
-            UINT32 numModeInfoArrayElements = 0;
-            LONG result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, 
-                &numPathArrayElements, &numModeInfoArrayElements);
-            
-            if (result == ERROR_SUCCESS && numPathArrayElements > 0) {
-                std::vector<DISPLAYCONFIG_PATH_INFO> pathArray(numPathArrayElements);
-                std::vector<DISPLAYCONFIG_MODE_INFO> modeInfoArray(numModeInfoArrayElements);
+                // Get current display configuration
+                UINT32 numPathArrayElements = 0;
+                UINT32 numModeInfoArrayElements = 0;
+                LONG result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, 
+                    &numPathArrayElements, &numModeInfoArrayElements);
                 
-                result = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS,
-                    &numPathArrayElements, pathArray.data(),
-                    &numModeInfoArrayElements, modeInfoArray.data(),
-                    nullptr);
-                
+                if (result == ERROR_SUCCESS && numPathArrayElements > 0) {
+                    std::vector<DISPLAYCONFIG_PATH_INFO> pathArray(numPathArrayElements);
+                    std::vector<DISPLAYCONFIG_MODE_INFO> modeInfoArray(numModeInfoArrayElements);
+                    
+                    result = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS,
+                        &numPathArrayElements, pathArray.data(),
+                        &numModeInfoArrayElements, modeInfoArray.data(),
+                        nullptr);
+                    
                 if (result == ERROR_SUCCESS) {
                     // CRITICAL FIX: Find the correct path index by matching device name
                     bool foundDevice = false;
@@ -1978,24 +1978,24 @@ namespace vdd {
                                 
                                 // Update position
                                 DISPLAYCONFIG_SOURCE_MODE& sourceMode = modeInfoArray[pathArray[i].sourceInfo.modeInfoIdx].sourceMode;
-                                sourceMode.position.x = rect.x;
-                                sourceMode.position.y = rect.y;
-                                
-                                // Apply the changes
-                                result = SetDisplayConfig(numPathArrayElements, pathArray.data(),
-                                    numModeInfoArrayElements, modeInfoArray.data(),
+                        sourceMode.position.x = rect.x;
+                        sourceMode.position.y = rect.y;
+                        
+                        // Apply the changes
+                        result = SetDisplayConfig(numPathArrayElements, pathArray.data(),
+                            numModeInfoArrayElements, modeInfoArray.data(),
                                     SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE);
-                                
-                                if (result == ERROR_SUCCESS) {
+                        
+                        if (result == ERROR_SUCCESS) {
                                     printf("[VDD] SetLocation: SUCCESS\n");
                                     SetLastError("Display location set successfully for output " + std::to_string(outputIndex));
                                     foundDevice = true;
                                     break;
-                                } else {
+                        } else {
                                     printf("[VDD] SetLocation: FAILED to apply config, error=%d\n", result);
-                                    SetLastError("Failed to apply display position change: " + std::to_string(result));
-                                    return Status::DriverError;
-                                }
+                            SetLastError("Failed to apply display position change: " + std::to_string(result));
+                            return Status::DriverError;
+                        }
                             }
                         }
                     }
@@ -2005,10 +2005,10 @@ namespace vdd {
                         return Status::DriverError;
                     }
                     
-                    return Status::Ok;
-                } else {
+                        return Status::Ok;
+                    } else {
                     SetLastError("Failed to query display configuration: " + std::to_string(result));
-                    return Status::DriverError;
+                        return Status::DriverError;
                 }
             } else {
                 SetLastError("Failed to get display config buffer sizes: " + std::to_string(result));
@@ -2039,14 +2039,14 @@ namespace vdd {
             
             if (virtualDisplays.empty()) {
                 SetLastError("No virtual displays found");
-                return Status::NotActive;
-            }
-            
+            return Status::NotActive;
+        }
+        
             if (outputIndex >= virtualDisplays.size()) {
                 SetLastError("Output index out of range");
-                return Status::InvalidArg;
-            }
-            
+            return Status::InvalidArg;
+        }
+        
             const std::wstring& targetDeviceName = virtualDisplays[outputIndex];
             
             // CRITICAL SAFETY: Prevent setting virtual display as primary by default
@@ -2081,14 +2081,14 @@ namespace vdd {
                 
                 if (result == DISP_CHANGE_SUCCESSFUL) {
                     printf("[VDD] ✓ SetPrimary: Display %ls successfully set as PRIMARY\n", targetDeviceName.c_str());
-                    SetLastError("Primary display set successfully to output " + std::to_string(outputIndex));
-                    return Status::Ok;
-                } else {
+                        SetLastError("Primary display set successfully to output " + std::to_string(outputIndex));
+                        return Status::Ok;
+                    } else {
                     printf("[VDD] SetPrimary: Failed to commit settings, error=%d\n", result);
                     SetLastError("Failed to commit primary display change: " + std::to_string(result));
-                    return Status::DriverError;
-                }
-            } else {
+                        return Status::DriverError;
+                    }
+                } else {
                 printf("[VDD] SetPrimary: Failed to set primary display, error=%d\n", result);
                 
                 // Provide helpful error messages
@@ -2115,7 +2115,7 @@ namespace vdd {
                 }
                 
                 SetLastError(errorMsg);
-                return Status::DriverError;
+                    return Status::DriverError;
             }
             
         } catch (const std::exception& e) {

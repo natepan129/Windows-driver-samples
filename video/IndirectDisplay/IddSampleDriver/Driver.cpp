@@ -601,15 +601,35 @@ void IndirectDeviceContext::FinishInit(UINT ConnectorIndex)
     }
 
     // ==============================
-    // TODO: The monitor's container ID should be distinct from "this" device's container ID if the monitor is not
-    // permanently attached to the display adapter device object. The container ID is typically made unique for each
-    // monitor and can be used to associate the monitor with other devices, like audio or input devices. In this
-    // sample we generate a random container ID GUID, but it's best practice to choose a stable container ID for a
-    // unique monitor or to use "this" device's container ID for a permanent/integrated monitor.
+    // FIXED: Generate stable ContainerId to prevent Windows from treating monitors as "new devices" on each boot
+    // This fixes display layout resets and mouse coordinate drift issues
+    // 
+    // Implementation: Use deterministic GUID generation based on:
+    // 1. Fixed namespace GUID (project-specific)
+    // 2. ConnectorIndex (unique for each monitor)
+    //
+    // This ensures the same monitor always gets the same ContainerId across reboots
     // ==============================
 
-    // Create a container ID
-    CoCreateGuid(&MonitorInfo.MonitorContainerId);
+    // Fixed namespace GUID for IddSampleDriver monitors
+    // Generated once for this project: {B5F1A7C3-8D2E-4F6A-9C1B-3E7D4A5F8C92}
+    static const GUID IDD_SAMPLE_NAMESPACE_GUID = 
+        { 0xB5F1A7C3, 0x8D2E, 0x4F6A, { 0x9C, 0x1B, 0x3E, 0x7D, 0x4A, 0x5F, 0x8C, 0x92 } };
+
+    // Generate stable ContainerId: Hash(NamespaceGUID + ConnectorIndex)
+    // Simple deterministic approach: XOR namespace GUID with ConnectorIndex pattern
+    GUID StableContainerId = IDD_SAMPLE_NAMESPACE_GUID;
+    StableContainerId.Data1 ^= (ConnectorIndex * 0x12345678);  // Mix ConnectorIndex into GUID
+    StableContainerId.Data2 ^= (WORD)(ConnectorIndex * 0xABCD);
+    StableContainerId.Data3 ^= (WORD)(ConnectorIndex * 0xEF01);
+    
+    MonitorInfo.MonitorContainerId = StableContainerId;
+    
+    DbgPrint("[IddSample] Monitor %d: Generated stable ContainerId {%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}\n",
+        ConnectorIndex,
+        StableContainerId.Data1, StableContainerId.Data2, StableContainerId.Data3,
+        StableContainerId.Data4[0], StableContainerId.Data4[1], StableContainerId.Data4[2], StableContainerId.Data4[3],
+        StableContainerId.Data4[4], StableContainerId.Data4[5], StableContainerId.Data4[6], StableContainerId.Data4[7]);
 
     IDARG_IN_MONITORCREATE MonitorCreate = {};
     MonitorCreate.ObjectAttributes = &Attr;
