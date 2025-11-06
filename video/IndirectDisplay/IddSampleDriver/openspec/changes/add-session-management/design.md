@@ -384,3 +384,5 @@ CreateNamedPipeW(L"\\\\.\\pipe\\VddBroker", ..., &sa);
 - **Named Pipes**: https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes
 - **DisplayConfig API**: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayconfig
 
+
+

@@ -79,3 +79,5 @@ The system SHALL provide a function to list all display adapters (physical and v
 - Fixed: Uses HWID instead of localized DeviceString
 - Result: Works on Chinese, Japanese, German Windows
 
+
+

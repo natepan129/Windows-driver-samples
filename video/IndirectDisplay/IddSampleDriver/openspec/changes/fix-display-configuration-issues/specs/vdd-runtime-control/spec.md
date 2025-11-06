@@ -70,3 +70,5 @@ The system SHALL reliably identify virtual display devices across all Windows co
 - Fixed: SPDRP_HARDWAREID now correctly parsed as MULTI_SZ
 - Added: Loop through all strings in MULTI_SZ array
 
+
+
