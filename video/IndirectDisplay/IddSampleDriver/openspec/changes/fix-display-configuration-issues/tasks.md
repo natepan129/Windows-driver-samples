@@ -89,6 +89,56 @@
 
 ---
 
+### 1.5 Fix Driver ContainerId Stability (Driver.cpp)
+
+**Issue**: `CoCreateGuid()` generates new ContainerId on each driver load, causing Windows to treat virtual monitors as "new devices" every time → display layout reset.
+
+- [ ] 1.5.1 Implement stable ContainerId generation
+  - [ ] Create deterministic GUID function: `GenerateStableContainerId(UINT ConnectorIndex)`
+  - [ ] Use fixed namespace GUID + ConnectorIndex as seed
+  - [ ] Example: Hash `{YOUR_VENDOR_GUID}` + `ConnectorIndex` → stable GUID
+- [ ] 1.5.2 Replace runtime GUID generation in FinishInit()
+  - [ ] Remove `CoCreateGuid(&MonitorContainerId)` in `FinishInit()`
+  - [ ] Call `MonitorContainerId = GenerateStableContainerId(pContext->ConnectorIndex)`
+  - [ ] Verify all 3 monitors get consistent ContainerIds across reboots
+- [ ] 1.5.3 Add optional registry persistence (fallback)
+  - [ ] Store generated GUIDs in driver's registry key on first init
+  - [ ] Load from registry on subsequent inits
+  - [ ] Only regenerate if registry key missing
+- [ ] 1.5.4 Test ContainerId persistence
+  - [ ] Install driver → Arrange displays in Windows Settings → Note positions
+  - [ ] Reboot system 3 times → Verify positions unchanged
+  - [ ] Reinstall driver (uninstall + reinstall) → Verify positions persist
+  - [ ] Test across Windows updates
+
+---
+
+### 1.6 Verify EDID Checksums (Driver.cpp)
+
+**Issue**: Two "Modified EDID" blocks may have incorrect checksums → OS ignores EDID → falls back to default modes.
+
+- [ ] 1.6.1 Validate existing EDID blocks
+  - [ ] Write EDID checksum validator: `bool ValidateEdidChecksum(const BYTE* edid, size_t len)`
+  - [ ] Formula: `(sum of bytes[0..127]) % 256 == 0`
+  - [ ] Check all 3 blocks in `s_SampleMonitors[]` (Dell, Lenovo, HP)
+  - [ ] Log results: "Monitor 0 (Dell): PASS", "Monitor 1 (Lenovo): FAIL (expected 0xXX, got 0xYY)"
+- [ ] 1.6.2 Fix invalid checksums
+  - [ ] For each failing EDID: calculate correct checksum byte
+  - [ ] Checksum byte = `(256 - (sum of bytes[0..126]) % 256) % 256`
+  - [ ] Update `byte[127]` to correct value
+  - [ ] Document fix in code comment: `// Fixed checksum: was 0xDF, corrected to 0x0A`
+- [ ] 1.6.3 Add compile-time EDID validation (optional)
+  - [ ] Create constexpr EDID validator function
+  - [ ] Add static_assert for each EDID block
+  - [ ] Prevents compilation if checksums incorrect
+- [ ] 1.6.4 Test EDID effectiveness
+  - [ ] Before fix: capture available resolutions via `vddctl list` or Windows Settings
+  - [ ] After fix: verify all EDID-declared modes appear
+  - [ ] Test on Windows 10 and Windows 11
+  - [ ] Compare mode lists: should see more resolutions after fix
+
+---
+
 ## Phase 2: Functional Fixes (v1.1) - 🟠 Must Fix
 
 ### 2.1 Fix EnumerateModes() - Respect outputIndex Parameter

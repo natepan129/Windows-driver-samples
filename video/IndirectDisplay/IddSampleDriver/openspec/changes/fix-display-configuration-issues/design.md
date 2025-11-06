@@ -2,13 +2,18 @@
 
 ## Context
 
-v1.0.0 display configuration has critical flaws in three areas:
+v1.0.0 display configuration has critical flaws in **five areas**:
 
+**SDK Layer (vddsdk.cpp)**:
 1. **SetDisplayConfig misuse**: Blind query-and-replay causes topology corruption
 2. **Device identification**: String-based matching fails across languages/OEMs
 3. **DEVMODE handling**: Incomplete structure preservation causes rejection
 
-This document provides **correct patterns** for each operation.
+**Driver Layer (Driver.cpp)**:
+4. **ContainerId instability**: Runtime GUID generation causes layout resets
+5. **EDID corruption**: Incorrect checksums cause OS to ignore EDID data
+
+This document provides **correct patterns** for each operation across both layers.
 
 ---
 
@@ -475,6 +480,132 @@ struct DisplayMode {
 
 // Option 2: Don't specify refresh rate, let Windows choose
 dm.dmFields &= ~DM_DISPLAYFREQUENCY;  // Don't set this field
+```
+
+---
+
+## Driver Layer Patterns
+
+### Pattern 7: Stable ContainerId Generation
+
+❌ **WRONG** (Runtime GUID - resets layout every reboot):
+
+```cpp
+// BAD: New GUID every time FinishInit() runs
+HRESULT hr = CoCreateGuid(&MonitorContainerId);
+// Windows sees this as a "new monitor" → desktop layout reset
+```
+
+✅ **CORRECT** (Deterministic GUID - stable across reboots):
+
+```cpp
+// Generate stable GUID from fixed namespace + ConnectorIndex
+GUID GenerateStableContainerId(UINT ConnectorIndex) {
+    // Use your vendor namespace GUID
+    static const GUID NAMESPACE_GUID = {
+        0x12345678, 0x1234, 0x5678, 
+        {0x12, 0x34, 0x56, 0x78, 0x90, 0xAB, 0xCD, 0xEF}
+    };
+    
+    // Seed = Namespace + Index
+    BYTE seed[sizeof(GUID) + sizeof(UINT)];
+    memcpy(seed, &NAMESPACE_GUID, sizeof(GUID));
+    memcpy(seed + sizeof(GUID), &ConnectorIndex, sizeof(UINT));
+    
+    // Hash to GUID (use RtlComputeCrc32 or similar)
+    GUID result;
+    // ... deterministic hash algorithm ...
+    return result;
+}
+
+// In FinishInit():
+MonitorContainerId = GenerateStableContainerId(pContext->ConnectorIndex);
+DbgPrint("[IddSample] Monitor %d: Stable ContainerId = {%08X-...}\n", 
+         pContext->ConnectorIndex, MonitorContainerId.Data1);
+```
+
+**Why this matters**:
+- Windows uses ContainerId to identify monitors across sessions
+- Stable GUID → Windows remembers display position, color profiles, scaling
+- Unstable GUID → Layout reset = terrible UX
+
+**Implementation notes**:
+- Use same namespace GUID for all 3 monitors
+- ConnectorIndex differentiates them
+- Optional: Persist to registry as backup
+
+---
+
+### Pattern 8: EDID Checksum Validation
+
+❌ **WRONG** (Invalid checksum - OS ignores EDID):
+
+```cpp
+// BAD: Checksum not validated
+static const BYTE edid_block[128] = {
+    0x00, 0xFF, 0xFF, ...,
+    0xDF  // <-- WRONG checksum, should be 0x0A
+};
+// Result: Windows falls back to generic 640x480, 800x600, 1024x768
+```
+
+✅ **CORRECT** (Validated checksum):
+
+```cpp
+// Calculate correct EDID checksum
+BYTE CalculateEdidChecksum(const BYTE* edid, size_t len) {
+    UINT sum = 0;
+    for (size_t i = 0; i < len - 1; i++) {
+        sum += edid[i];
+    }
+    return (BYTE)((256 - (sum % 256)) % 256);
+}
+
+// Validate at compile time
+static const BYTE s_MonitorEdid[128] = {
+    // ... EDID data ...
+    0x0A  // Correct checksum
+};
+
+#ifdef _DEBUG
+static_assert(
+    CalculateEdidChecksum(s_MonitorEdid, 128) == s_MonitorEdid[127],
+    "EDID checksum mismatch!"
+);
+#endif
+
+// At runtime validation:
+bool ValidateEdidChecksum(const BYTE* edid, size_t len) {
+    UINT sum = 0;
+    for (size_t i = 0; i < len; i++) {
+        sum += edid[i];
+    }
+    return (sum % 256) == 0;  // Valid if sum divisible by 256
+}
+```
+
+**Checksum formula** (EDID 1.3 standard):
+1. Sum bytes[0..126]
+2. Checksum = (256 - (sum % 256)) % 256
+3. Byte[127] = checksum
+4. Verification: (sum of all 128 bytes) % 256 == 0
+
+**Known issues in sample code**:
+- Monitor 0 (Dell): Checksum likely correct
+- Monitor 1 (Lenovo): May need correction
+- Monitor 2 (HP): Checksum was 0xDF, corrected to 0x0A
+
+**Testing**:
+```cpp
+// Add to driver init:
+for (UINT i = 0; i < ARRAYSIZE(s_SampleMonitors); i++) {
+    bool valid = ValidateEdidChecksum(
+        s_SampleMonitors[i].pEdidBlock, 
+        IndirectSampleMonitor::szEdidBlock
+    );
+    DbgPrint("[IddSample] Monitor %d EDID checksum: %s\n", 
+             i, valid ? "VALID" : "INVALID");
+}
 ```
 
 ---

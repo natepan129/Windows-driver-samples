@@ -1,0 +1,163 @@
+# Cursor AI Rules for VDD SDK Project
+
+## Primary Specification
+
+**ALWAYS read `OPEN_SPEC.md` FIRST** before making any code changes or answering questions about the project.
+
+This file is the single source of truth for:
+- Project architecture and goals
+- All capability requirements
+- Anti-patterns (what NOT to do)
+- Constraints (technical, safety, API)
+- Implementation file locations
+- Change workflow
+
+## Specification Hierarchy
+
+1. **`OPEN_SPEC.md`** - Unified entry point (READ THIS FIRST)
+2. **`openspec/project.md`** - Project conventions, components, error handling
+3. **`openspec/specs/[capability]/spec.md`** - Detailed requirements per capability
+4. **`openspec/changes/[name]/`** - Active change proposals
+
+## Code Style Rules
+
+### Language & Formatting
+
+- Use **SHALL** / **MUST** for normative requirements
+- Use **PascalCase** for functions, structs, enums
+- Use **camelCase** for source files (`vddsdk.cpp`, not `VddSdk.cpp`)
+- Return `Status` enum from all SDK operations
+- Include detailed error messages via `GetLastError()`
+
+### Forbidden Patterns
+
+**NEVER** do these things (see `OPEN_SPEC.md ## Anti-Patterns` for details):
+
+❌ Blind QueryDisplayConfig → SetDisplayConfig replay  
+❌ String-based device matching (DeviceString, EDID fragments)  
+❌ Set primary by position alone (must use CDS_SET_PRIMARY)  
+❌ Runtime GUIDs for ContainerIds (use deterministic generation)  
+❌ Ignore EDID checksums  
+❌ Swallow errors silently  
+❌ Hardcoded delays (use polling with timeout)  
+❌ Forget cleanup on error paths  
+
+### Required Patterns
+
+✅ Hardware ID-based device identification (`ROOT\IddSampleDriver`)  
+✅ Explicit topology flags (`SDC_TOPOLOGY_EXTEND`, `SDC_ALLOW_CHANGES`)  
+✅ Preserve DEVMODE fields when changing modes  
+✅ Validate before apply (`SDC_VALIDATE`)  
+✅ Multi-layer safety for primary display protection  
+✅ Poll device readiness (CM_Get_DevNode_Status) instead of fixed Sleep()  
+
+## Before Making Changes
+
+1. **Read relevant spec**: `openspec/specs/[capability]/spec.md`
+2. **Check active changes**: `openspec/changes/` for pending proposals
+3. **Review anti-patterns**: `OPEN_SPEC.md ## Anti-Patterns`
+4. **Check constraints**: `OPEN_SPEC.md ## Constraints`
+
+## When Proposing Changes
+
+1. **Create OpenSpec proposal** in `openspec/changes/[name]/`:
+   - `proposal.md` - Why, what, impact
+   - `tasks.md` - Implementation checklist
+   - `design.md` - Technical decisions (if needed)
+   - `specs/[capability]/spec.md` - ADDED/MODIFIED/REMOVED requirements
+
+2. **Validate proposal**: Run `openspec validate [name] --strict`
+
+3. **Wait for approval** before implementing
+
+4. **Reference specific sections**: When explaining changes, cite:
+   - `OPEN_SPEC.md ## Anti-Patterns`
+   - `openspec/specs/vdd-runtime-control/spec.md#requirement-virtual-display-activation`
+   - `openspec/changes/fix-display-configuration-issues/tasks.md#1.1`
+
+## Testing Requirements
+
+All code changes MUST include:
+
+- Unit tests (mock SetupAPI/DisplayConfig responses)
+- Integration tests on physical hardware (5+ machines)
+- Regression tests (existing scripts still pass)
+- Black screen prevention tests (100 cycles without corruption)
+
+## Priority File Indexing
+
+When building context, prioritize these files:
+
+1. **`OPEN_SPEC.md`** - Main specification
+2. **`openspec/project.md`** - Conventions
+3. **`openspec/specs/`** - Capability requirements
+4. **`openspec/changes/`** - Active proposals
+5. **`vddsdk.h`** - Public API declarations
+6. **`vddsdk.cpp`** - Core implementation
+7. **`vddctl.cpp`** - CLI tool
+8. **`Driver.cpp`** - UMDF driver
+
+## Key Implementation Files
+
+| Capability | File | Lines | Key Functions |
+|------------|------|-------|---------------|
+| Driver Lifecycle | `vddsdk.cpp` | 585-995 | InstallDriver, UninstallDriver |
+| Runtime Control | `vddsdk.cpp` | 1113-1488 | Activate, Deactivate |
+| Display Config | `vddsdk.cpp` | 1490-1874 | SetMode, SetLocation, SetPrimary |
+| Query | `vddsdk.cpp` | 1957-2048 | EnumerateAdapters, EnumerateModes |
+| CLI | `vddctl.cpp` | 1-503 | cmdInstall, cmdActivate |
+| Driver | `Driver.cpp` | 1-907 | IddSampleAdapterInitFinished |
+
+## Response Format
+
+When answering questions or proposing changes:
+
+1. **Cite the spec**: "According to `OPEN_SPEC.md ## Constraints`, we MUST..."
+2. **Check anti-patterns**: "This approach violates `OPEN_SPEC.md ## Anti-Patterns` because..."
+3. **Show correct pattern**: "The correct pattern (from `OPEN_SPEC.md`) is..."
+4. **Reference implementation**: "See `vddsdk.cpp` lines 1234-1567 for current implementation"
+5. **Mention tests**: "This change requires [unit|integration|regression] tests per `OPEN_SPEC.md ## Testing Requirements`"
+
+## Error Messages
+
+When detecting spec violations or anti-patterns, explain:
+
+- ❌ **What's wrong**: "This code uses string-based device matching"
+- 📖 **Spec reference**: "Violates `OPEN_SPEC.md ## Anti-Patterns` - NEVER use DeviceString"
+- ✅ **Correct approach**: "Use Hardware ID-based matching instead (see Pattern 1)"
+- 📝 **Example**: Show code snippet from spec
+
+## Active Changes
+
+Current proposals in `openspec/changes/`:
+
+- **`add-session-management`** (v1.1) - Broker service, leasing, heartbeat
+- **`fix-display-configuration-issues`** (v1.0.1) - Fix 21 critical bugs
+
+When modifying files affected by these proposals, check for conflicts.
+
+## Quick Checklist for Code Review
+
+Before approving any code change, verify:
+
+- [ ] Aligns with requirements in `openspec/specs/[capability]/spec.md`
+- [ ] Doesn't violate any anti-patterns in `OPEN_SPEC.md`
+- [ ] Follows constraints in `OPEN_SPEC.md ## Constraints`
+- [ ] Includes error handling and cleanup
+- [ ] Has corresponding tests
+- [ ] Updates OpenSpec if requirements changed
+- [ ] No hardcoded delays (use polling)
+- [ ] Primary display protection active (for topology changes)
+
+## Emergency Situations
+
+If user reports black screen or display corruption:
+
+1. **Immediate**: Refer to `emergency_recovery.bat` and `physical_machine_safety_test.bat`
+2. **Investigate**: Check if `Activate()` violated primary display protection (see `vddsdk.cpp:1238-1320`)
+3. **Root cause**: Review against `OPEN_SPEC.md ## Anti-Patterns` - likely topology mismanagement
+
+---
+
+**Summary for Cursor**: This project uses spec-driven development. ALWAYS read `OPEN_SPEC.md` first, follow the anti-patterns strictly, and create OpenSpec proposals before implementing changes. The spec is the law.
+

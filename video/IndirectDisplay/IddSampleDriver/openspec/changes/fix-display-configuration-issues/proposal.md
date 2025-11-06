@@ -2,19 +2,24 @@
 
 ## Why
 
-Technical audit of v1.0.0 identified **19 critical issues** in display configuration that cause:
+Technical audit of v1.0.0 identified **21 critical issues** across SDK + Driver that cause:
 
 1. **Black screens on physical machines** - Incorrect SetDisplayConfig usage can corrupt display topology
 2. **Non-functional APIs** - SetPrimary() doesn't actually change primary display
 3. **Device misidentification** - String-based device matching fails across systems
-4. **Broken queries** - EnumerateModes() ignores outputIndex parameter
-5. **State inconsistencies** - Cached vs real-time state divergence
+4. **Display layout resets** - Driver generates new ContainerIds on every boot
+5. **Broken queries** - EnumerateModes() ignores outputIndex parameter
+6. **State inconsistencies** - Cached vs real-time state divergence
 
 **Severity Breakdown**:
-- 🔴 **4 High Risk (Black Screen)**: Can brick user's display in production
+- 🔴 **6 High Risk (Critical UX)**: Black screens, layout resets, EDID corruption
 - 🟠 **5 Must Fix (Broken Functionality)**: Core features don't work as designed
 - 🟡 **6 Should Fix (Inconsistencies)**: Edge cases and reliability issues
 - 🟢 **4 UX Improvements**: Robustness and user experience
+
+**Components Affected**:
+- `vddsdk.cpp` / `vddctl.cpp` - 19 issues in user-mode SDK
+- `Driver.cpp` - 2 issues in kernel-mode driver (ContainerId, EDID)
 
 **Impact**: Without these fixes, SDK is **not production-ready** for physical machines.
 
@@ -47,6 +52,18 @@ Technical audit of v1.0.0 identified **19 critical issues** in display configura
 - **Issue**: Mode changes rejected or auto-corrected by Windows
 - **Fix**: Query ENUM_CURRENT_SETTINGS first, then modify only target fields
 - **Impact**: SetMode actually applies requested resolution
+
+**1.5 Fix Driver ContainerId Stability (Driver.cpp)**
+- **Current**: `CoCreateGuid()` generates new ContainerId on each driver load
+- **Issue**: Windows treats monitors as "new devices" every reboot → display layout reset
+- **Fix**: Generate stable GUIDs using fixed namespace + ConnectorIndex
+- **Impact**: Display positions persist across reboots, no more manual rearrangement
+
+**1.6 Verify EDID Checksums (Driver.cpp)**
+- **Current**: Two "Modified EDID" blocks may have incorrect checksums
+- **Issue**: OS ignores invalid EDIDs → falls back to limited default mode list
+- **Fix**: Validate and correct all EDID block checksums (byte[127])
+- **Impact**: All EDID-declared resolutions available in Windows Settings
 
 ---
 
@@ -164,20 +181,26 @@ Technical audit of v1.0.0 identified **19 critical issues** in display configura
 ### Affected Code Files
 
 **High Impact**:
-- `vddsdk.cpp` - All 19 fixes touch this file
+- `vddsdk.cpp` - 19 SDK fixes touch this file
   - Activate(): ~50 lines changed
   - SetMode(): ~80 lines changed
   - SetPrimary(): ~30 lines changed
   - SetLocation(): ~40 lines changed
   - GetVirtualDisplayDeviceNames(): Complete rewrite (~100 lines)
   - EnumerateModes(): ~20 lines changed
+- `Driver.cpp` - 2 driver fixes
+  - FinishInit(): ContainerId generation (~10 lines new + ~5 lines changed)
+  - s_SampleMonitors[]: EDID checksum corrections (~3 bytes changed)
+  - EDID validation functions (~50 lines new)
 
 **Medium Impact**:
 - `vddctl.cpp` - Improve error messaging for fixes 4.2, 4.3
 - Test scripts - Update expected behaviors
+- Driver debug output - Add ContainerId and EDID validation logging
 
 **Low Impact**:
 - Documentation - Update API examples with correct patterns
+- Build scripts - No changes required
 
 ### Breaking Changes
 
@@ -245,6 +268,8 @@ Technical audit of v1.0.0 identified **19 critical issues** in display configura
 - ✅ SetPrimary() actually changes Windows primary display
 - ✅ Device identification works on English/Chinese/Japanese Windows
 - ✅ SetMode() applies resolution on 95%+ of test configurations
+- ✅ Display layout persists across 3+ reboots (ContainerId fix)
+- ✅ All EDID-declared modes visible in Windows Settings (EDID checksum fix)
 
 ### Phase 2 (v1.1 Functional) - Week 3-4
 
@@ -271,10 +296,12 @@ Technical audit of v1.0.0 identified **19 critical issues** in display configura
 
 ### Unit Tests (Per Fix)
 
-Each of the 19 fixes gets dedicated unit test:
-- Mock SetupAPI/DisplayConfig responses
-- Verify correct API call sequence
-- Test error handling paths
+Each of the 21 fixes gets dedicated unit test:
+- **SDK fixes (19)**: Mock SetupAPI/DisplayConfig responses, verify API sequence
+- **Driver fixes (2)**:
+  - ContainerId: Verify deterministic GUID generation across restarts
+  - EDID: Validate checksum calculation algorithm correctness
+- Test error handling paths for all fixes
 
 ### Integration Tests (Physical Hardware)
 
