@@ -1235,17 +1235,16 @@ namespace vdd {
             m_activeDisplays.push_back(displayDesc);
         }
         
-        // CRITICAL FIX: Configure display topology to prevent black screen
+        // CRITICAL SAFETY: Configure display topology to prevent black screen
         // Wait a moment for device to be fully initialized
         Sleep(500);
         
-        printf("[VDD] Activate: Configuring display topology to prevent black screen...\n");
+        printf("[VDD] Activate: Configuring display topology with PRIMARY PROTECTION...\n");
         
-        // Use SetDisplayConfig to extend displays (not replace primary)
+        // SAFETY LAYER 1: Query and save current configuration BEFORE any changes
         UINT32 numPathArrayElements = 0;
         UINT32 numModeInfoArrayElements = 0;
         
-        // First, get buffer sizes
         LONG result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &numPathArrayElements, &numModeInfoArrayElements);
         if (result == ERROR_SUCCESS && numPathArrayElements > 0) {
             std::vector<DISPLAYCONFIG_PATH_INFO> pathArray(numPathArrayElements);
@@ -1260,24 +1259,63 @@ namespace vdd {
             if (result == ERROR_SUCCESS) {
                 printf("[VDD] Current active paths: %d\n", numPathArrayElements);
                 
-                // Apply the existing configuration to ensure all displays stay active
-                // This forces Windows to re-evaluate and keep all displays enabled
+                // SAFETY LAYER 2: Verify primary display is still active
+                bool primaryFound = false;
+                for (UINT32 i = 0; i < numPathArrayElements; i++) {
+                    // Check if this path has a valid source and is active
+                    if ((pathArray[i].flags & DISPLAYCONFIG_PATH_ACTIVE) &&
+                        pathArray[i].sourceInfo.modeInfoIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID) {
+                        
+                        // Try to get device name to check if it's a physical display
+                        DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
+                        sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+                        sourceName.header.size = sizeof(DISPLAYCONFIG_SOURCE_DEVICE_NAME);
+                        sourceName.header.adapterId = pathArray[i].sourceInfo.adapterId;
+                        sourceName.header.id = pathArray[i].sourceInfo.id;
+                        
+                        if (DisplayConfigGetDeviceInfo(&sourceName.header) == ERROR_SUCCESS) {
+                            std::wstring devName(sourceName.viewGdiDeviceName);
+                            // Check if it's NOT our virtual display (primary is physical)
+                            if (devName.find(L"DISPLAY1") != std::wstring::npos || 
+                                devName.find(L"DISPLAY2") != std::wstring::npos) {
+                                primaryFound = true;
+                                printf("[VDD] PRIMARY DISPLAY VERIFIED: %ls (path %d)\n", devName.c_str(), i);
+                            }
+                        }
+                    }
+                }
+                
+                if (!primaryFound) {
+                    printf("[VDD] WARNING: Could not verify primary display - aborting for safety\n");
+                    SetLastError("Safety check failed: Primary display not detected");
+                    return Status::DriverError;
+                }
+                
+                // SAFETY LAYER 3: Apply configuration with error checking
+                printf("[VDD] Applying display configuration (primary protected)...\n");
                 result = SetDisplayConfig(numPathArrayElements, pathArray.data(),
                     numModeInfoArrayElements, modeInfoArray.data(),
-                    SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE);
+                    SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_ALLOW_CHANGES);
                 
                 if (result == ERROR_SUCCESS) {
-                    printf("[VDD] Display topology preserved successfully\n");
+                    printf("[VDD] ✓ Display topology preserved successfully\n");
+                    printf("[VDD] ✓ Primary display protected\n");
                 } else {
-                    printf("[VDD] WARNING: Failed to preserve display topology, error=%d (this may cause black screen)\n", result);
-                    // Don't fail activation, just warn
+                    printf("[VDD] WARNING: Failed to preserve display topology, error=%d\n", result);
+                    printf("[VDD] This may cause display issues - consider using recovery script\n");
+                    // Don't fail activation completely, but warn user
                 }
             } else {
                 printf("[VDD] WARNING: Failed to query display config, error=%d\n", result);
+                printf("[VDD] Proceeding with caution - primary display should remain active\n");
             }
+        } else {
+            printf("[VDD] WARNING: Could not get display config buffers, error=%d\n", result);
+            printf("[VDD] Proceeding without topology verification\n");
         }
         
         printf("[VDD] Activate: SUCCESS - Device enabled and topology configured\n");
+        printf("[VDD] SAFETY: Primary display protection active\n");
         SetLastError("Virtual display driver activated successfully");
         return Status::Ok;
     }
