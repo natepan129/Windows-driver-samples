@@ -56,7 +56,8 @@ namespace vdd {
         ServiceUnavailable = 14,   // VDD service not available
         RebootRequired = 15,       // System reboot required to complete operation
         LeaseExpired = 16,        // Session lease expired
-        ConcurrentAccess = 17      // Concurrent access not allowed
+        ConcurrentAccess = 17,     // Concurrent access not allowed
+        OperationNotPermitted = 18 // Operation not permitted for safety reasons
     };
 
     /// <summary>
@@ -246,10 +247,12 @@ namespace vdd {
 
     /// <summary>
     /// Set a virtual display as the primary display
+    /// WARNING: This operation is dangerous and may cause login issues!
     /// </summary>
     /// <param name="outputIndex">Index of the output to set as primary</param>
+    /// <param name="force">Force flag - must be true to override safety checks. Default is false (operation will be rejected)</param>
     /// <returns>Status of the primary display change</returns>
-    Status SetPrimary(uint32_t outputIndex);
+    Status SetPrimary(uint32_t outputIndex, bool force = false);
 
     /// <summary>
     /// Get the current mode of a specific output

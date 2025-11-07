@@ -15,6 +15,7 @@ Environment:
 
 #include "vddsdk.h"
 #include <windows.h>
+#include <wtsapi32.h>
 #include <setupapi.h>
 #include <devguid.h>
 #include <devpkey.h>
@@ -66,7 +67,7 @@ namespace vdd {
         uint32_t GetActiveDisplayCount();
         Status SetMode(uint32_t outputIndex, const DisplayMode& mode);
         Status SetLocation(uint32_t outputIndex, const DisplayRect& rect);
-        Status SetPrimary(uint32_t outputIndex);
+        Status SetPrimary(uint32_t outputIndex, bool force = false);
         Status GetMode(uint32_t outputIndex, DisplayMode& mode);
         Status GetLocation(uint32_t outputIndex, DisplayRect& rect);
         Status EnumerateAdapters(std::vector<AdapterInfo>& adapters);
@@ -134,6 +135,122 @@ namespace vdd {
         }
         
         return isAdmin == TRUE;
+    }
+    
+    // CRITICAL SAFETY: Detect remote/VM sessions - SetPrimary() must be blocked in these environments
+    static bool IsRemoteOrVMSession() {
+        // Method 1: Check if running in RDP session
+        if (GetSystemMetrics(SM_REMOTESESSION)) {
+            return true;
+        }
+        
+        // Method 2: Check if current session is console session
+        DWORD consoleSessionId = WTSGetActiveConsoleSessionId();
+        DWORD currentSessionId = 0;
+        if (ProcessIdToSessionId(GetCurrentProcessId(), &currentSessionId)) {
+            if (currentSessionId != consoleSessionId) {
+                return true; // Not console session = likely remote
+            }
+        }
+        
+        // Method 3: Check for VM indicators (VirtualBox, VMware, Hyper-V, QEMU, Xen)
+        HKEY hKey;
+        // Check for VirtualBox
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\VBoxGuest", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            return true;
+        }
+        // Check for VMware
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\vmware", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            return true;
+        }
+        // Check for Hyper-V (VM)
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\vmicguestinterface", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            return true;
+        }
+        // Check SystemManufacturer for VM signatures (more reliable)
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, 
+            L"SYSTEM\\CurrentControlSet\\Control\\SystemInformation",
+            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            
+            wchar_t manufacturer[256] = {};
+            DWORD size = sizeof(manufacturer);
+            if (RegQueryValueExW(hKey, L"SystemManufacturer", nullptr, nullptr, 
+                (LPBYTE)manufacturer, &size) == ERROR_SUCCESS) {
+                
+                // Check for common VM signatures
+                if (wcsstr(manufacturer, L"VMware") || 
+                    wcsstr(manufacturer, L"VirtualBox") ||
+                    wcsstr(manufacturer, L"QEMU") ||
+                    wcsstr(manufacturer, L"Xen") ||
+                    wcsstr(manufacturer, L"Microsoft Corporation")) { // Hyper-V
+                    RegCloseKey(hKey);
+                    return true;
+                }
+            }
+            RegCloseKey(hKey);
+        }
+        
+        return false;
+    }
+    
+    // Check if desktop is locked (SetPrimary() should not run when locked)
+    static bool IsDesktopLocked() {
+        HDESK hDesk = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS);
+        if (hDesk == NULL) {
+            // Cannot open desktop = likely locked
+            return true;
+        }
+        CloseDesktop(hDesk);
+        return false;
+    }
+    
+    // Check if target display is active and visible in topology
+    static bool IsTargetDisplayActiveVisible(const std::wstring& deviceName) {
+        UINT32 numPathArrayElements = 0;
+        UINT32 numModeInfoArrayElements = 0;
+        
+        LONG result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS,
+            &numPathArrayElements, &numModeInfoArrayElements);
+        
+        if (result != ERROR_SUCCESS || numPathArrayElements == 0) {
+            return false;
+        }
+        
+        std::vector<DISPLAYCONFIG_PATH_INFO> pathArray(numPathArrayElements);
+        std::vector<DISPLAYCONFIG_MODE_INFO> modeInfoArray(numModeInfoArrayElements);
+        
+        result = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS,
+            &numPathArrayElements, pathArray.data(),
+            &numModeInfoArrayElements, modeInfoArray.data(),
+            nullptr);
+        
+        if (result != ERROR_SUCCESS) {
+            return false;
+        }
+        
+        // Search for the target device in active paths
+        for (UINT32 i = 0; i < numPathArrayElements; i++) {
+            DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
+            sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+            sourceName.header.size = sizeof(DISPLAYCONFIG_SOURCE_DEVICE_NAME);
+            sourceName.header.adapterId = pathArray[i].sourceInfo.adapterId;
+            sourceName.header.id = pathArray[i].sourceInfo.id;
+            
+            if (DisplayConfigGetDeviceInfo(&sourceName.header) == ERROR_SUCCESS) {
+                if (wcscmp(sourceName.viewGdiDeviceName, deviceName.c_str()) == 0) {
+                    // Found target device - check if it's not mirrored (mirrored paths share the same source)
+                    // A path is mirrored if DISPLAYCONFIG_PATH_MIRROR_VIEW flag is set
+                    if (!(pathArray[i].flags & DISPLAYCONFIG_PATH_MIRROR_VIEW)) {
+                        return true; // Active and visible (not mirrored)
+                    }
+                }
+            }
+        }
+        
+        return false;
     }
 
     // ============================================================================
@@ -282,13 +399,13 @@ namespace vdd {
         return impl->SetLocation(outputIndex, rect);
     }
 
-    Status SetPrimary(uint32_t outputIndex) {
+    Status SetPrimary(uint32_t outputIndex, bool force) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
         // FIXED: Auto-create instance for standalone display operations
         VddSdkImpl* impl = GetOrCreateInstance_Locked();
 
-        return impl->SetPrimary(outputIndex);
+        return impl->SetPrimary(outputIndex, force);
     }
 
     Status GetMode(uint32_t outputIndex, DisplayMode& mode) {
@@ -517,6 +634,7 @@ namespace vdd {
             case Status::RebootRequired: return "Reboot required";
             case Status::LeaseExpired: return "Session lease expired";
             case Status::ConcurrentAccess: return "Concurrent access not allowed";
+            case Status::OperationNotPermitted: return "Operation not permitted";
             default: return "Unknown error";
         }
     }
@@ -932,16 +1050,14 @@ namespace vdd {
         printf("[VDD] Recommend: Connect physical display before uninstalling virtual driver\n");
     }
     
-    // Collect INF names for Driver Store cleanup (before removing devices)
-    std::vector<std::wstring> infNamesToRemove;
+    // SAFE Driver Store cleanup: Only remove INF packages that we can verify belong to our driver
+    // CRITICAL: Never use SPDRP_DRIVER as INF name - it's a registry key, not an INF file!
+    std::vector<std::wstring> verifiedInfNamesToRemove;
+    
     for (const auto& devInfo : devicesToRemove) {
-        // Get published INF name (oemXX.inf) using SetupDiGetDeviceRegistryProperty
-        // Method 1: Try to get the driver info detail which includes INF path
+        // Method 1: Get driver info detail which includes INF path
         SP_DRVINFO_DATA_W drvInfo = {};
         drvInfo.cbSize = sizeof(SP_DRVINFO_DATA_W);
-        
-        bool gotInfName = false;
-        std::wstring infName;
         
         if (SetupDiGetDeviceInstallParamsW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), nullptr) == FALSE) {
             SP_DEVINSTALL_PARAMS_W installParams = {};
@@ -951,37 +1067,91 @@ namespace vdd {
         
         if (SetupDiBuildDriverInfoList(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), SPDIT_COMPATDRIVER)) {
             if (SetupDiEnumDriverInfoW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), SPDIT_COMPATDRIVER, 0, &drvInfo)) {
-                SP_DRVINFO_DETAIL_DATA_W detail = {};
-                detail.cbSize = sizeof(SP_DRVINFO_DETAIL_DATA_W);
+                // Get required buffer size first
                 DWORD requiredSize = 0;
+                SetupDiGetDriverInfoDetailW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), 
+                    &drvInfo, nullptr, 0, &requiredSize);
                 
-                if (SetupDiGetDriverInfoDetailW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), 
-                    &drvInfo, &detail, sizeof(detail), &requiredSize) || ::GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-                    // Extract filename from full INF path
-                    std::wstring fullPath(detail.InfFileName);
-                    size_t lastSlash = fullPath.find_last_of(L"\\/");
-                    infName = (lastSlash != std::wstring::npos) ? fullPath.substr(lastSlash + 1) : fullPath;
+                if (requiredSize > 0) {
+                    std::vector<BYTE> detailBuffer(requiredSize);
+                    SP_DRVINFO_DETAIL_DATA_W* detail = reinterpret_cast<SP_DRVINFO_DETAIL_DATA_W*>(detailBuffer.data());
+                    detail->cbSize = sizeof(SP_DRVINFO_DETAIL_DATA_W);
                     
-                    // Only accept oemXX.inf format to avoid accidents
-                    if (infName.find(L"oem") == 0 && infName.find(L".inf") != std::wstring::npos) {
-                        infNamesToRemove.push_back(infName);
-                        gotInfName = true;
+                    if (SetupDiGetDriverInfoDetailW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), 
+                        &drvInfo, detail, requiredSize, nullptr)) {
+                        
+                        // Extract filename from full INF path
+                        std::wstring fullPath(detail->InfFileName);
+                        size_t lastSlash = fullPath.find_last_of(L"\\/");
+                        std::wstring infName = (lastSlash != std::wstring::npos) ? fullPath.substr(lastSlash + 1) : fullPath;
+                        
+                        // CRITICAL SAFETY: Verify this INF belongs to our driver before adding to removal list
+                        // Only accept oemXX.inf format (published INF names from Driver Store)
+                        if (infName.find(L"oem") == 0 && infName.find(L".inf") != std::wstring::npos) {
+                            // Additional verification: Check if INF path is from Driver Store and contains our Hardware ID
+                            std::wstring infPath(detail->InfFileName);
+                            
+                            // Verify INF is from Driver Store (safer than user/system directories)
+                            bool isFromDriverStore = (infPath.find(L"DriverStore") != std::wstring::npos) ||
+                                                      (infPath.find(L"\\oem") != std::wstring::npos);
+                            
+                            if (isFromDriverStore) {
+                                // Verify INF contains our Hardware ID by searching the file
+                                HINF hInf = SetupOpenInfFileW(detail->InfFileName, nullptr, INF_STYLE_WIN4, nullptr);
+                                if (hInf != INVALID_HANDLE_VALUE) {
+                                    bool foundOurHwid = false;
+                                    INFCONTEXT context = {};
+                                    
+                                    // Search for our Hardware ID in all sections
+                                    // Look in [Manufacturer] sections and their model sections
+                                    if (SetupFindFirstLineW(hInf, L"Manufacturer", nullptr, &context)) {
+                                        WCHAR keyName[256] = {};
+                                        do {
+                                            if (SetupGetStringFieldW(&context, 0, keyName, sizeof(keyName)/sizeof(WCHAR), nullptr)) {
+                                                // Search in the model section
+                                                INFCONTEXT modelContext = {};
+                                                if (SetupFindFirstLineW(hInf, keyName, nullptr, &modelContext)) {
+                                                    WCHAR hwid[256] = {};
+                                                    // Hardware ID is typically in field 1 or 2
+                                                    if (SetupGetStringFieldW(&modelContext, 1, hwid, sizeof(hwid)/sizeof(WCHAR), nullptr)) {
+                                                        if (_wcsicmp(hwid, L"ROOT\\IddSampleDriver") == 0) {
+                                                            foundOurHwid = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        } while (SetupFindNextLine(&context, &context));
+                                    }
+                                    
+                                    SetupCloseInfFile(hInf);
+                                    
+                                    if (foundOurHwid) {
+                                        // Verified: This INF belongs to our driver
+                                        printf("[VDD] Verified INF belongs to IddSampleDriver: %ls\n", infName.c_str());
+                                        verifiedInfNamesToRemove.push_back(infName);
+                                    } else {
+                                        printf("[VDD] WARNING: INF %ls does not contain our Hardware ID, skipping Driver Store cleanup\n", infName.c_str());
+                                    }
+                                } else {
+                                    // If we can't open INF for verification, don't add to removal list (safe default)
+                                    printf("[VDD] WARNING: Cannot open INF %ls for verification, skipping Driver Store cleanup\n", infName.c_str());
+                                }
+                            } else {
+                                printf("[VDD] WARNING: INF %ls is not from Driver Store, skipping cleanup\n", infName.c_str());
+                            }
+                        } else {
+                            printf("[VDD] WARNING: INF name %ls is not in oemXX.inf format, skipping\n", infName.c_str());
+                        }
                     }
                 }
             }
             SetupDiDestroyDriverInfoList(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), SPDIT_COMPATDRIVER);
         }
         
-        // Fallback: Use SPDRP_DRIVER if we couldn't get the INF name above
-        if (!gotInfName) {
-            WCHAR driverKey[MAX_PATH] = {};
-            if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, const_cast<PSP_DEVINFO_DATA>(&devInfo), 
-                SPDRP_DRIVER, nullptr, (BYTE*)driverKey, sizeof(driverKey), nullptr)) {
-                // SPDRP_DRIVER returns something like "{4d36e968-e325-11ce-bfc1-08002be10318}\0007"
-                // We try to extract INF from registry or use as-is for DiUninstallDriverW
-                infNamesToRemove.push_back(driverKey);
-            }
-        }
+        // REMOVED: Fallback to SPDRP_DRIVER - this is NOT an INF name and should NEVER be passed to DiUninstallDriverW!
+        // SPDRP_DRIVER returns a registry key path like "{4d36e968-e325-11ce-bfc1-08002be10318}\0007"
+        // Passing this to DiUninstallDriverW could cause undefined behavior or delete wrong drivers
     }
     
     // Remove each device
@@ -1028,21 +1198,24 @@ namespace vdd {
         
         SetupDiDestroyDeviceInfoList(hDevInfo);
         
-        // Clean up Driver Store (remove INF packages)
-        // This prevents accumulation of oem1.inf, oem2.inf, etc.
-        if (successCount > 0 && !infNamesToRemove.empty()) {
-            printf("[VDD] Cleaning up Driver Store packages...\n");
-            for (const auto& infName : infNamesToRemove) {
+        // SAFE Driver Store cleanup: Only remove verified INF packages
+        // CRITICAL: Only remove INFs that we've verified belong to our driver
+        if (successCount > 0 && !verifiedInfNamesToRemove.empty()) {
+            printf("[VDD] Cleaning up Driver Store packages (verified INFs only)...\n");
+            for (const auto& infName : verifiedInfNamesToRemove) {
                 BOOL needReboot = FALSE;
-                printf("[VDD] Removing package: %ls\n", infName.c_str());
+                printf("[VDD] Removing verified package: %ls\n", infName.c_str());
                 if (DiUninstallDriverW(nullptr, infName.c_str(), 0, &needReboot)) {
                     printf("[VDD] Successfully removed package: %ls\n", infName.c_str());
                 } else {
                     DWORD err = ::GetLastError();
                     printf("[VDD] WARNING: Failed to remove package %ls, error=%d\n", infName.c_str(), err);
-                    // Continue anyway - device is already removed
+                    // Continue anyway - device is already removed, INF cleanup is optional
                 }
             }
+        } else if (successCount > 0) {
+            printf("[VDD] INFO: Device(s) removed successfully, but no verified INF packages found for cleanup\n");
+            printf("[VDD] INFO: This is safe - Driver Store cleanup is optional and device removal is complete\n");
         }
         
         // Report results
@@ -1688,21 +1861,25 @@ namespace vdd {
         
         // Find our device
         for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); ++i) {
-            wchar_t hwid[256] = {};
+            wchar_t hwids[4096] = {}; // Increased buffer size for Multi-SZ
             if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID,
-                nullptr, (PBYTE)hwid, sizeof(hwid), nullptr)) {
+                nullptr, (PBYTE)hwids, sizeof(hwids), nullptr)) {
                 
-                if (_wcsicmp(hwid, L"ROOT\\IddSampleDriver") == 0) {
-                    // Found our device - check if it's started and has no problems
-                    ULONG status = 0, problemNumber = 0;
-                    if (CM_Get_DevNode_Status(&status, &problemNumber, devInfoData.DevInst, 0) == CR_SUCCESS) {
-                        // Device is active if it's started and has no problems
-                        isActive = (status & DN_STARTED) && !(status & DN_HAS_PROBLEM);
+                // FIXED: SPDRP_HARDWAREID is REG_MULTI_SZ format - iterate through all strings
+                for (wchar_t* p = hwids; *p; p += wcslen(p) + 1) {
+                    if (_wcsicmp(p, L"ROOT\\IddSampleDriver") == 0) {
+                        // Found our device - check if it's started and has no problems
+                        ULONG status = 0, problemNumber = 0;
+                        if (CM_Get_DevNode_Status(&status, &problemNumber, devInfoData.DevInst, 0) == CR_SUCCESS) {
+                            // Device is active if it's started and has no problems
+                            isActive = (status & DN_STARTED) && !(status & DN_HAS_PROBLEM);
+                        }
+                        goto found; // Break out of nested loops
                     }
-                    break;
                 }
             }
         }
+    found:
         
         SetupDiDestroyDeviceInfoList(hDevInfo);
         return isActive;
@@ -2021,51 +2198,214 @@ namespace vdd {
         }
     }
 
-    Status VddSdkImpl::SetPrimary(uint32_t outputIndex) {
+    // Helper: Backup current display topology for rollback
+    struct TopologyBackup {
+        std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+        std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+        bool valid = false;
+    };
+    
+    static TopologyBackup BackupTopology() {
+        TopologyBackup backup;
+        UINT32 numPathArrayElements = 0;
+        UINT32 numModeInfoArrayElements = 0;
+        
+        LONG result = GetDisplayConfigBufferSizes(QDC_DATABASE_CURRENT,
+            &numPathArrayElements, &numModeInfoArrayElements);
+        
+        if (result == ERROR_SUCCESS && numPathArrayElements > 0) {
+            backup.paths.resize(numPathArrayElements);
+            backup.modes.resize(numModeInfoArrayElements);
+            
+            result = QueryDisplayConfig(QDC_DATABASE_CURRENT,
+                &numPathArrayElements, backup.paths.data(),
+                &numModeInfoArrayElements, backup.modes.data(),
+                nullptr);
+            
+            if (result == ERROR_SUCCESS) {
+                backup.valid = true;
+                printf("[VDD] SetPrimary: Topology backed up (%u paths, %u modes)\n", 
+                    numPathArrayElements, numModeInfoArrayElements);
+            }
+        }
+        
+        return backup;
+    }
+    
+    static bool RestoreTopology(const TopologyBackup& backup) {
+        if (!backup.valid || backup.paths.empty()) {
+            printf("[VDD] SetPrimary: Cannot restore - backup invalid or empty\n");
+            return false;
+        }
+        
+        LONG result = SetDisplayConfig(
+            static_cast<UINT32>(backup.paths.size()), 
+            const_cast<DISPLAYCONFIG_PATH_INFO*>(backup.paths.data()),
+            static_cast<UINT32>(backup.modes.size()),
+            const_cast<DISPLAYCONFIG_MODE_INFO*>(backup.modes.data()),
+            SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_APPLY | SDC_SAVE_TO_DATABASE);
+        
+        if (result == ERROR_SUCCESS) {
+            printf("[VDD] SetPrimary: Topology restored successfully\n");
+            return true;
+        } else {
+            printf("[VDD] SetPrimary: Failed to restore topology, error=%d\n", result);
+            return false;
+        }
+    }
+    
+    static std::string GetDispChangeErrorString(LONG result) {
+        switch (result) {
+            case DISP_CHANGE_SUCCESSFUL:
+                return "Success";
+            case DISP_CHANGE_BADMODE:
+                return "The graphics mode is not supported";
+            case DISP_CHANGE_BADFLAGS:
+                return "Invalid flags specified";
+            case DISP_CHANGE_BADPARAM:
+                return "Invalid parameter specified";
+            case DISP_CHANGE_FAILED:
+                return "The display driver failed to apply changes";
+            case DISP_CHANGE_NOTUPDATED:
+                return "Unable to write settings to the registry";
+            case DISP_CHANGE_RESTART:
+                return "System restart required";
+            default:
+                return "Unknown error code " + std::to_string(result);
+        }
+    }
+    
+    Status VddSdkImpl::SetPrimary(uint32_t outputIndex, bool force) {
         std::lock_guard<std::mutex> lock(m_mutex);
         
-        // FIXED: Check actual driver installation, not process-local state
+        printf("[VDD] SetPrimary: Starting (outputIndex=%u, force=%d)\n", outputIndex, force);
+        
+        // ========================================================================
+        // CRITICAL SAFETY CHECKS - Multi-layer protection
+        // ========================================================================
+        
+        // Check 1: Force flag - must be set to proceed
+        if (!force) {
+            printf("[VDD] SetPrimary: REJECTED - Force flag not set\n");
+            printf("[VDD] SetPrimary: Setting virtual display as primary is DANGEROUS!\n");
+            printf("[VDD] SetPrimary: This operation can cause:\n");
+            printf("[VDD] SetPrimary:   - Login screen issues\n");
+            printf("[VDD] SetPrimary:   - Black screen on reboot\n");
+            printf("[VDD] SetPrimary:   - System lockout\n");
+            printf("[VDD] SetPrimary: Use --force-primary flag to override this safety check.\n");
+            SetLastError("SetPrimary requires --force-primary flag. This operation is dangerous and not recommended.");
+            return Status::OperationNotPermitted;
+        }
+        
+        // Check 2: Remote/VM session - HARD BLOCK (even with force)
+        if (IsRemoteOrVMSession()) {
+            printf("[VDD] SetPrimary: BLOCKED - Remote/VM session detected\n");
+            printf("[VDD] SetPrimary: This operation is NOT allowed in RDP, VM, or non-console sessions\n");
+            printf("[VDD] SetPrimary: Recovery would be extremely difficult in these environments\n");
+            SetLastError("SetPrimary blocked: Remote/VM session detected. This operation is not safe in remote environments.");
+            return Status::AccessDenied;
+        }
+        
+        // Check 3: Driver installation
         if (!IsDriverInstalled()) {
+            printf("[VDD] SetPrimary: FAILED - Driver not installed\n");
             SetLastError("Virtual display driver not installed");
             return Status::NotInstalled;
         }
         
-        // Note: Don't check m_isActive - each vddctl run is a new process
-        // We'll validate outputIndex against actual virtual displays later
+        // Check 4: Administrator privileges (REQUIRED for SetPrimary)
+        if (!IsRunningAsAdministrator()) {
+            printf("[VDD] SetPrimary: FAILED - Administrator privileges required\n");
+            SetLastError("Administrator privileges required for SetPrimary operation");
+            return Status::AdminRequired;
+        }
+        
+        // Check 5: Desktop locked - should not run when locked
+        if (IsDesktopLocked()) {
+            printf("[VDD] SetPrimary: BLOCKED - Desktop is locked\n");
+            SetLastError("SetPrimary blocked: Desktop is locked. Unlock desktop first.");
+            return Status::InvalidState;
+        }
         
         try {
-            // FIXED: Get virtual display device names first
+            // Get virtual display device names
             std::vector<std::wstring> virtualDisplays = GetVirtualDisplayDeviceNames();
             
             if (virtualDisplays.empty()) {
                 SetLastError("No virtual displays found");
-            return Status::NotActive;
-        }
-        
+                return Status::NotActive;
+            }
+            
             if (outputIndex >= virtualDisplays.size()) {
                 SetLastError("Output index out of range");
-            return Status::InvalidArg;
-        }
-        
+                return Status::InvalidArg;
+            }
+            
             const std::wstring& targetDeviceName = virtualDisplays[outputIndex];
             
-            // CRITICAL SAFETY: Prevent setting virtual display as primary by default
-            // This can cause lock-screen/sign-in issues on laptops, VMs, and RDP sessions
-            // Users must explicitly allow this with a configuration flag if needed
-            printf("[VDD] SetPrimary: WARNING - Attempting to set virtual display as primary\n");
+            printf("[VDD] SetPrimary: WARNING - Setting virtual display as primary (--force enabled)\n");
             printf("[VDD] SetPrimary: Target device: %ls\n", targetDeviceName.c_str());
             printf("[VDD] SetPrimary: This operation can cause lock-screen and sign-in issues!\n");
-            printf("[VDD] SetPrimary: Setting virtual display as primary is NOT RECOMMENDED.\n");
-            printf("[VDD] SetPrimary: If you encounter login issues, press Ctrl+Alt+Del and use Task Manager\n");
-            printf("[VDD] SetPrimary: to run 'vddctl deactivate' or reboot to safe mode.\n");
             
-            // For now, we ALLOW it but with strong warnings
-            // In production, consider adding a --force flag requirement
-            printf("[VDD] SetPrimary: Proceeding with user acknowledgment of risks...\n");
+            // Check 6: Verify target display is active and visible
+            if (!IsTargetDisplayActiveVisible(targetDeviceName)) {
+                printf("[VDD] SetPrimary: ERROR - Target display is not active or visible in topology\n");
+                SetLastError("Target display is not active or visible. Cannot set as primary.");
+                return Status::DriverError;
+            }
+            
+            // Check 7: Verify at least one physical display is enabled (even with --force, require physical display)
+            printf("[VDD] SetPrimary: Verifying physical display availability...\n");
+            std::vector<std::wstring> existingVirtualDisplays = GetVirtualDisplayDeviceNames();
+            DISPLAY_DEVICEW dd = {};
+            dd.cb = sizeof(DISPLAY_DEVICEW);
+            bool hasPhysical = false;
+            std::wstring physicalDisplayName;
+            
+            for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &dd, 0); ++i) {
+                bool isVirtual = false;
+                std::wstring deviceName(dd.DeviceName);
+                for (const auto& vddName : existingVirtualDisplays) {
+                    if (deviceName == vddName) {
+                        isVirtual = true;
+                        break;
+                    }
+                }
+                
+                if (!isVirtual && (dd.StateFlags & DISPLAY_DEVICE_ACTIVE)) {
+                    hasPhysical = true;
+                    physicalDisplayName = dd.DeviceName;
+                    printf("[VDD] SetPrimary: Found physical display: %ls\n", dd.DeviceName);
+                    break;
+                }
+            }
+            
+            if (!hasPhysical) {
+                printf("[VDD] SetPrimary: ERROR - No physical display found!\n");
+                printf("[VDD] SetPrimary: Refusing to set virtual display as primary without physical display\n");
+                printf("[VDD] SetPrimary: Even with --force, physical display is required for safety\n");
+                SetLastError("No physical display present; refusing to set virtual display as primary for safety");
+                return Status::DriverError;
+            }
+            
+            printf("[VDD] SetPrimary: All safety checks passed, proceeding...\n");
+            
+            // ========================================================================
+            // BACKUP TOPOLOGY BEFORE CHANGES
+            // ========================================================================
+            TopologyBackup backup = BackupTopology();
+            if (!backup.valid) {
+                printf("[VDD] SetPrimary: WARNING - Failed to backup topology, proceeding anyway\n");
+            }
             
             // FIXED: Use ChangeDisplaySettingsExW with CDS_SET_PRIMARY flag
             // This is the official way to set primary display in Windows
             // Setting position to (0,0) does NOT make it primary!
+            
+            // ========================================================================
+            // ATTEMPT TO SET PRIMARY DISPLAY
+            // ========================================================================
+            printf("[VDD] SetPrimary: Attempting to set %ls as primary...\n", targetDeviceName.c_str());
             
             LONG result = ChangeDisplaySettingsExW(
                 targetDeviceName.c_str(),  // Device name
@@ -2081,41 +2421,42 @@ namespace vdd {
                 
                 if (result == DISP_CHANGE_SUCCESSFUL) {
                     printf("[VDD] ✓ SetPrimary: Display %ls successfully set as PRIMARY\n", targetDeviceName.c_str());
-                        SetLastError("Primary display set successfully to output " + std::to_string(outputIndex));
-                        return Status::Ok;
-                    } else {
-                    printf("[VDD] SetPrimary: Failed to commit settings, error=%d\n", result);
-                    SetLastError("Failed to commit primary display change: " + std::to_string(result));
-                        return Status::DriverError;
-                    }
+                    printf("[VDD] SetPrimary: Logging topology change: %ls -> PRIMARY\n", targetDeviceName.c_str());
+                    SetLastError("Primary display set successfully to output " + std::to_string(outputIndex));
+                    return Status::Ok;
                 } else {
+                    // Commit failed - attempt rollback
+                    printf("[VDD] SetPrimary: Failed to commit settings, error=%d\n", result);
+                    printf("[VDD] SetPrimary: Attempting automatic rollback...\n");
+                    
+                    if (backup.valid) {
+                        if (RestoreTopology(backup)) {
+                            printf("[VDD] SetPrimary: Rollback successful\n");
+                        } else {
+                            printf("[VDD] SetPrimary: WARNING - Rollback failed! Manual recovery may be needed.\n");
+                            printf("[VDD] SetPrimary: Recovery command: displaySwitch.exe /internal\n");
+                            printf("[VDD] SetPrimary: Or: vddctl deactivate\n");
+                        }
+                    }
+                    
+                    std::string errorMsg = "Failed to commit primary display change: ";
+                    errorMsg += GetDispChangeErrorString(result);
+                    SetLastError(errorMsg);
+                    return Status::DriverError;
+                }
+            } else {
+                // Initial change failed - no rollback needed (nothing changed)
                 printf("[VDD] SetPrimary: Failed to set primary display, error=%d\n", result);
                 
-                // Provide helpful error messages
                 std::string errorMsg = "Failed to set primary display: ";
-                switch (result) {
-                    case DISP_CHANGE_BADMODE:
-                        errorMsg += "The graphics mode is not supported";
-                        break;
-                    case DISP_CHANGE_BADFLAGS:
-                        errorMsg += "Invalid flags specified";
-                        break;
-                    case DISP_CHANGE_BADPARAM:
-                        errorMsg += "Invalid parameter specified";
-                        break;
-                    case DISP_CHANGE_FAILED:
-                        errorMsg += "The display driver failed to apply changes";
-                        break;
-                    case DISP_CHANGE_RESTART:
-                        errorMsg += "System restart required";
-                        break;
-                    default:
-                        errorMsg += "Error code " + std::to_string(result);
-                        break;
-                }
+                errorMsg += GetDispChangeErrorString(result);
+                errorMsg += "\nRecovery options:\n";
+                errorMsg += "  1. displaySwitch.exe /internal (switch to internal display)\n";
+                errorMsg += "  2. vddctl deactivate (deactivate virtual displays)\n";
+                errorMsg += "  3. vddctl setprimary --index <physical-index> --force (set physical display as primary)";
                 
                 SetLastError(errorMsg);
-                    return Status::DriverError;
+                return (result == DISP_CHANGE_RESTART) ? Status::RebootRequired : Status::DriverError;
             }
             
         } catch (const std::exception& e) {
@@ -2504,7 +2845,8 @@ extern "C" {
     }
 
     vdd::Status VddSetPrimary(uint32_t outputIndex) {
-        return vdd::SetPrimary(outputIndex);
+        // C API defaults to force=false for safety
+        return vdd::SetPrimary(outputIndex, false);
     }
 
     vdd::Status VddEnumerateAdapters(vdd::AdapterInfo* adapters, uint32_t* count) {

@@ -56,11 +56,12 @@ target_link_libraries(vddsdk
     advapi32
     user32
     kernel32
+    wtsapi32
 )
 
 # Create the CLI tool executable
 add_executable(vddctl vddctl.cpp)
-target_link_libraries(vddctl vddsdk_static setupapi newdev cfgmgr32 advapi32)
+target_link_libraries(vddctl vddsdk_static setupapi newdev cfgmgr32 advapi32 wtsapi32)
 
 # Installation
 install(TARGETS vddsdk vddctl
@@ -90,6 +91,7 @@ target_link_libraries(vddsdk_static
     advapi32
     user32
     kernel32
+    wtsapi32
 )
 
 # Package configuration (simplified)

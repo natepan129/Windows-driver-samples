@@ -19,6 +19,7 @@ Environment:
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <io.h>
 #include <Windows.h>
 
 using namespace vdd;
@@ -59,11 +60,36 @@ public:
         return options.find(key) != options.end();
     }
     
+    bool hasFlag(const std::string& key) const {
+        return hasOption(key);
+    }
+    
     std::string getOption(const std::string& key, const std::string& defaultValue = "") const {
         auto it = options.find(key);
         return (it != options.end()) ? it->second : defaultValue;
     }
 };
+
+// Interactive Yes/No prompt (P1 feature)
+bool promptYesNo(const std::string& message) {
+    // Check if running in interactive terminal
+    if (!_isatty(_fileno(stdin))) {
+        std::cout << "Non-interactive mode detected - defaulting to NO" << std::endl;
+        return false;
+    }
+    
+    std::cout << message << " [y/N]: ";
+    std::cout.flush();
+    
+    std::string response;
+    std::getline(std::cin, response);
+    
+    // Trim whitespace
+    response.erase(0, response.find_first_not_of(" \t\n\r"));
+    response.erase(response.find_last_not_of(" \t\n\r") + 1);
+    
+    return (response == "y" || response == "Y" || response == "yes" || response == "YES");
+}
 
 // Print help information
 void printHelp() {
@@ -103,7 +129,7 @@ void printHelp() {
     std::cout << "  vddctl activate --name \"Virtual Display\" --width 1920 --height 1080" << std::endl;
     std::cout << "  vddctl setmode --index 0 --width 2560 --height 1440 --refresh 75" << std::endl;
     std::cout << "  vddctl setlocation --index 0 --x 1920 --y 0 --width 1920 --height 1080" << std::endl;
-    std::cout << "  vddctl setprimary --index 0" << std::endl;
+    std::cout << "  vddctl setprimary --index 0 --force-primary" << std::endl;
     std::cout << "  vddctl deactivate" << std::endl;
     std::cout << "  vddctl shutdown" << std::endl;
 }
@@ -285,21 +311,154 @@ void cmdSetLocation(const ArgumentParser& args) {
     }
 }
 
-// Set primary display
+// Set primary display (with P1+P2 features)
 void cmdSetPrimary(const ArgumentParser& args) {
     std::cout << "Setting primary display..." << std::endl;
+    std::cout << "========================================" << std::endl;
+    
+    // Check for flags
+    bool force = args.hasFlag("--force-primary");
+    bool yes = args.hasFlag("--yes") || args.hasFlag("-y");
+    bool dryRun = args.hasFlag("--dry-run");
     
     uint32_t index = std::stoi(args.getOption("index", "0"));
     
-    Status status = SetPrimary(index);
-    if (status == Status::Ok) {
-        std::cout << "Primary display set successfully." << std::endl;
-        std::cout << "Index: " << index << std::endl;
-    } else {
-        std::cout << "Failed to set primary display: " << StatusToString(status) << std::endl;
-        if (status != Status::Ok) {
-            std::cout << "Error: " << vdd::GetLastError() << std::endl;
+    // ============================================================================
+    // P0: Force flag required
+    // ============================================================================
+    if (!force) {
+        std::cout << "⚠️  WARNING: SetPrimary is DANGEROUS!" << std::endl;
+        std::cout << "This operation requires the --force-primary flag." << std::endl;
+        std::cout << std::endl;
+        std::cout << "Risks:" << std::endl;
+        std::cout << "  • May cause login screen issues" << std::endl;
+        std::cout << "  • May cause black screen on reboot" << std::endl;
+        std::cout << "  • May lock you out of the system" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Usage: vddctl setprimary <index> --force-primary [--yes] [--dry-run]" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Options:" << std::endl;
+        std::cout << "  --force-primary  Override safety check (required)" << std::endl;
+        std::cout << "  --yes, -y        Skip interactive confirmation" << std::endl;
+        std::cout << "  --dry-run        Check only, don't execute" << std::endl;
+        std::cout << "========================================" << std::endl;
+        return;
+    }
+    
+    // ============================================================================
+    // P1: Display information and target details
+    // ============================================================================
+    std::cout << "Target:" << std::endl;
+    std::cout << "  Output Index: " << index << std::endl;
+    std::cout << std::endl;
+    
+    std::cout << "Safety Checks:" << std::endl;
+    std::cout << "  ✓ Force flag provided" << std::endl;
+    std::cout << "  ⏳ Remote/VM check (will be performed by SDK)" << std::endl;
+    std::cout << "  ⏳ Physical display check (will be performed by SDK)" << std::endl;
+    std::cout << "  ⏳ Target visibility check (will be performed by SDK)" << std::endl;
+    std::cout << "  ⏳ Topology backup (will be performed by SDK)" << std::endl;
+    std::cout << std::endl;
+    
+    // ============================================================================
+    // P1: Dry-run mode (check only, don't execute)
+    // ============================================================================
+    if (dryRun) {
+        std::cout << "🔍 DRY-RUN MODE: Checking feasibility without executing..." << std::endl;
+        std::cout << "========================================" << std::endl;
+        
+        std::cout << "Checks that would be performed:" << std::endl;
+        std::cout << "  1. ✓ Force flag check - PASSED" << std::endl;
+        std::cout << "  2. Remote/VM session check" << std::endl;
+        std::cout << "  3. Physical display availability check" << std::endl;
+        std::cout << "  4. Administrator privileges check" << std::endl;
+        std::cout << "  5. Target display visibility check" << std::endl;
+        std::cout << "  6. Topology backup" << std::endl;
+        std::cout << "  7. Execute SetPrimary operation" << std::endl;
+        std::cout << "  8. Automatic rollback on failure" << std::endl;
+        std::cout << std::endl;
+        std::cout << "✓ Dry-run complete. Use without --dry-run to execute." << std::endl;
+        std::cout << "========================================" << std::endl;
+        return;
+    }
+    
+    // ============================================================================
+    // P1: Interactive confirmation (unless --yes provided)
+    // ============================================================================
+    if (!yes) {
+        std::cout << "⚠️  FINAL CONFIRMATION REQUIRED ⚠️" << std::endl;
+        std::cout << std::endl;
+        std::cout << "You are about to set a VIRTUAL display as PRIMARY!" << std::endl;
+        std::cout << "This is a HIGH-RISK operation that may:" << std::endl;
+        std::cout << "  • Cause black screen on reboot" << std::endl;
+        std::cout << "  • Make login screen inaccessible" << std::endl;
+        std::cout << "  • Require safe mode to recover" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Recovery methods if something goes wrong:" << std::endl;
+        std::cout << "  1. Press Ctrl+Alt+Del → Task Manager → vddctl deactivate" << std::endl;
+        std::cout << "  2. Run: displayswitch.exe /internal" << std::endl;
+        std::cout << "  3. Reboot to Safe Mode" << std::endl;
+        std::cout << std::endl;
+        
+        if (!promptYesNo("Do you really want to proceed?")) {
+            std::cout << std::endl;
+            std::cout << "Operation cancelled by user." << std::endl;
+            std::cout << "========================================" << std::endl;
+            return;
         }
+        
+        std::cout << std::endl;
+        std::cout << "User confirmed. Proceeding..." << std::endl;
+    } else {
+        std::cout << "⚠️  --yes flag detected - skipping interactive confirmation" << std::endl;
+    }
+    
+    std::cout << "========================================" << std::endl;
+    std::cout << "Executing SetPrimary with full safety checks..." << std::endl;
+    std::cout << "========================================" << std::endl;
+    
+    // ============================================================================
+    // Execute the operation
+    // ============================================================================
+    Status status = SetPrimary(index, force);
+    
+    // ============================================================================
+    // Handle results
+    // ============================================================================
+    if (status == Status::Ok) {
+        std::cout << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "✓ SUCCESS: Primary display set!" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "Output Index: " << index << std::endl;
+        std::cout << "Status: Active" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Please verify:" << std::endl;
+        std::cout << "  • Taskbar moved to virtual display?" << std::endl;
+        std::cout << "  • New windows open on virtual display?" << std::endl;
+        std::cout << "  • Login screen still accessible?" << std::endl;
+        std::cout << "========================================" << std::endl;
+    } else if (status == Status::OperationNotPermitted) {
+        std::cout << "✗ Operation not permitted: " << vdd::GetLastError() << std::endl;
+        std::cout << "Hint: This shouldn't happen with --force-primary flag." << std::endl;
+        std::cout << "========================================" << std::endl;
+    } else if (status == Status::AccessDenied) {
+        std::cout << "✗ Access denied: " << vdd::GetLastError() << std::endl;
+        std::cout << "This operation is blocked in remote/VM sessions for safety." << std::endl;
+        std::cout << "Cannot be overridden - please use a physical machine console." << std::endl;
+        std::cout << "========================================" << std::endl;
+    } else {
+        std::cout << "✗ Failed to set primary display: " << StatusToString(status) << std::endl;
+        std::cout << "Error: " << vdd::GetLastError() << std::endl;
+        std::cout << std::endl;
+        std::cout << "Note: Topology should have been automatically restored." << std::endl;
+        std::cout << std::endl;
+        std::cout << "If you still have issues, try:" << std::endl;
+        std::cout << "  1. Press Ctrl+Alt+Del" << std::endl;
+        std::cout << "  2. Open Task Manager" << std::endl;
+        std::cout << "  3. Run: vddctl deactivate" << std::endl;
+        std::cout << "  4. Or run: displayswitch.exe /internal" << std::endl;
+        std::cout << "========================================" << std::endl;
     }
 }
 
