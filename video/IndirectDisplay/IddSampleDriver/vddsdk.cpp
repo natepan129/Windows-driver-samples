@@ -35,13 +35,13 @@ Environment:
 #include <ctime>
 #include <mutex>
 #include <thread>
-#include <chrono>
 #include <sstream>
 #include <iomanip>
 
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "wtsapi32.lib")
 
 namespace vdd {
 
@@ -205,6 +205,39 @@ namespace vdd {
         }
         CloseDesktop(hDesk);
         return false;
+    }
+    
+    // Get Windows version from registry (replaces deprecated GetVersionExW)
+    static void GetWindowsVersionInfo(std::ostringstream& info) {
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, 
+            L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            
+            wchar_t productName[256] = {};
+            wchar_t buildNumber[64] = {};
+            DWORD size = sizeof(productName);
+            
+            if (RegQueryValueExW(hKey, L"ProductName", nullptr, nullptr,
+                (LPBYTE)productName, &size) == ERROR_SUCCESS) {
+                char productNameA[256] = {};
+                WideCharToMultiByte(CP_UTF8, 0, productName, -1, productNameA, sizeof(productNameA), nullptr, nullptr);
+                info << productNameA;
+            }
+            
+            size = sizeof(buildNumber);
+            if (RegQueryValueExW(hKey, L"CurrentBuild", nullptr, nullptr,
+                (LPBYTE)buildNumber, &size) == ERROR_SUCCESS) {
+                char buildNumberA[64] = {};
+                WideCharToMultiByte(CP_UTF8, 0, buildNumber, -1, buildNumberA, sizeof(buildNumberA), nullptr, nullptr);
+                info << " Build " << buildNumberA;
+            }
+            
+            info << "\n";
+            RegCloseKey(hKey);
+        } else {
+            info << "Windows (version unknown)\n";
+        }
     }
     
     // Check if target display is active and visible in topology
@@ -539,16 +572,8 @@ namespace vdd {
             // Return basic system info even when SDK is not initialized
             std::stringstream info;
             
-            // Get Windows version
-            OSVERSIONINFOW osvi = {};
-            osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOW);
-            if (GetVersionExW(&osvi)) {
-                info << "Windows " << osvi.dwMajorVersion << "." << osvi.dwMinorVersion;
-                if (osvi.dwBuildNumber > 0) {
-                    info << " Build " << osvi.dwBuildNumber;
-                }
-                info << "\n";
-            }
+            // Get Windows version (using registry instead of deprecated GetVersionExW)
+            GetWindowsVersionInfo(info);
             
             // Get system memory
             MEMORYSTATUSEX memStatus = {};
@@ -2683,16 +2708,8 @@ namespace vdd {
         // REAL IMPLEMENTATION - Gather actual system information
         std::stringstream info;
         
-        // Get Windows version
-        OSVERSIONINFOW osvi = {};
-        osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOW);
-        if (GetVersionExW(&osvi)) {
-            info << "Windows " << osvi.dwMajorVersion << "." << osvi.dwMinorVersion;
-            if (osvi.dwBuildNumber > 0) {
-                info << " Build " << osvi.dwBuildNumber;
-            }
-            info << "\n";
-        }
+        // Get Windows version (using registry instead of deprecated GetVersionExW)
+        GetWindowsVersionInfo(info);
         
         // Get system memory
         MEMORYSTATUSEX memStatus = {};
