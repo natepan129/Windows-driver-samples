@@ -39,6 +39,9 @@ Environment:
 #include <iomanip>
 
 #pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "cfgmgr32.lib")
+#pragma comment(lib, "newdev.lib")
+#pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "wtsapi32.lib")
@@ -570,7 +573,7 @@ namespace vdd {
         
         if (!g_sdkInstance) {
             // Return basic system info even when SDK is not initialized
-            std::stringstream info;
+            std::ostringstream info;
             
             // Get Windows version (using registry instead of deprecated GetVersionExW)
             GetWindowsVersionInfo(info);
@@ -1970,7 +1973,12 @@ namespace vdd {
             return Status::InvalidArg;
         }
         
-        // Check refresh rate
+        // Check refresh rate - prevent division by zero
+        if (mode.refreshDenominator == 0) {
+            SetLastError("Invalid refresh rate: denominator cannot be zero");
+            return Status::InvalidArg;
+        }
+        
         uint32_t refreshRate = mode.refreshNumerator / mode.refreshDenominator;
         if (refreshRate < 30 || refreshRate > 240) {
             SetLastError("Refresh rate out of supported range (30-240 Hz)");
@@ -2122,11 +2130,7 @@ namespace vdd {
             return Status::InvalidArg;
         }
         
-        // Check position range (allow negative coordinates, but width/height must be positive)
-        if (rect.width < 0 || rect.height < 0) {
-            SetLastError("Display rectangle dimensions must be non-negative");
-            return Status::InvalidArg;
-        }
+        // Note: width and height are uint32_t, so they are always non-negative by type
         
         try {
             // FIXED: Get virtual display device names first
@@ -2706,7 +2710,7 @@ namespace vdd {
 
     std::string VddSdkImpl::GetSystemInfo() {
         // REAL IMPLEMENTATION - Gather actual system information
-        std::stringstream info;
+        std::ostringstream info;
         
         // Get Windows version (using registry instead of deprecated GetVersionExW)
         GetWindowsVersionInfo(info);
