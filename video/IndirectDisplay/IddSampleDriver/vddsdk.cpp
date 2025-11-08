@@ -1,4 +1,4 @@
-/*++
+﻿/*++
 
 Copyright (c) 2025 VDD SDK Project
 
@@ -2920,6 +2920,3 @@ extern "C" {
 
 }
 
-/ /   T E S T   W R I T E 
- 
- 

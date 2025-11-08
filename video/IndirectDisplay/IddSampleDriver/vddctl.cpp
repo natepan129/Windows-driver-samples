@@ -70,6 +70,55 @@ public:
     }
 };
 
+// Safe integer parsing with validation
+bool safeParseInt(const std::string& str, const std::string& paramName, int32_t& result) {
+    if (str.empty()) {
+        std::cerr << "Error: Parameter '" << paramName << "' is empty" << std::endl;
+        return false;
+    }
+    
+    // Check if string contains only digits (and optional leading minus)
+    size_t start = 0;
+    if (str[0] == '-') {
+        start = 1;
+        if (str.length() == 1) {
+            std::cerr << "Error: Parameter '" << paramName << "' has invalid value: '" << str << "'" << std::endl;
+            return false;
+        }
+    }
+    
+    for (size_t i = start; i < str.length(); i++) {
+        if (!std::isdigit(static_cast<unsigned char>(str[i]))) {
+            std::cerr << "Error: Parameter '" << paramName << "' must be a valid integer, got: '" << str << "'" << std::endl;
+            return false;
+        }
+    }
+    
+    try {
+        result = std::stoi(str);
+        return true;
+    } catch (const std::out_of_range&) {
+        std::cerr << "Error: Parameter '" << paramName << "' value out of range: '" << str << "'" << std::endl;
+        return false;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to parse parameter '" << paramName << "': " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool safeParseUInt(const std::string& str, const std::string& paramName, uint32_t& result) {
+    int32_t temp;
+    if (!safeParseInt(str, paramName, temp)) {
+        return false;
+    }
+    if (temp < 0) {
+        std::cerr << "Error: Parameter '" << paramName << "' must be non-negative, got: " << temp << std::endl;
+        return false;
+    }
+    result = static_cast<uint32_t>(temp);
+    return true;
+}
+
 // Interactive Yes/No prompt (P1 feature)
 bool promptYesNo(const std::string& message) {
     // Check if running in interactive terminal
@@ -222,14 +271,19 @@ void cmdActivate(const ArgumentParser& args) {
     
     VirtualDisplayDesc desc;
     desc.name = args.getOption("name", "Virtual Display");
-    desc.preferredMode.width = std::stoi(args.getOption("width", "1920"));
-    desc.preferredMode.height = std::stoi(args.getOption("height", "1080"));
-    desc.preferredMode.refreshNumerator = std::stoi(args.getOption("refresh", "60"));
+    
+    uint32_t width, height, refresh, count;
+    if (!safeParseUInt(args.getOption("width", "1920"), "width", width)) return;
+    if (!safeParseUInt(args.getOption("height", "1080"), "height", height)) return;
+    if (!safeParseUInt(args.getOption("refresh", "60"), "refresh", refresh)) return;
+    if (!safeParseUInt(args.getOption("count", "1"), "count", count)) return;
+    
+    desc.preferredMode.width = width;
+    desc.preferredMode.height = height;
+    desc.preferredMode.refreshNumerator = refresh;
     desc.preferredMode.refreshDenominator = 1;
     desc.hdr10 = args.hasOption("hdr");
     desc.stereoscopic = args.hasOption("stereo");
-    
-    uint32_t count = std::stoi(args.getOption("count", "1"));
     
     Status status = Activate(desc, count);
     if (status == Status::Ok) {
@@ -265,11 +319,16 @@ void cmdDeactivate(const ArgumentParser& args) {
 void cmdSetMode(const ArgumentParser& args) {
     std::cout << "Setting display mode..." << std::endl;
     
-    uint32_t index = std::stoi(args.getOption("index", "0"));
+    uint32_t index, width, height, refresh;
+    if (!safeParseUInt(args.getOption("index", "0"), "index", index)) return;
+    if (!safeParseUInt(args.getOption("width", "1920"), "width", width)) return;
+    if (!safeParseUInt(args.getOption("height", "1080"), "height", height)) return;
+    if (!safeParseUInt(args.getOption("refresh", "60"), "refresh", refresh)) return;
+    
     DisplayMode mode;
-    mode.width = std::stoi(args.getOption("width", "1920"));
-    mode.height = std::stoi(args.getOption("height", "1080"));
-    mode.refreshNumerator = std::stoi(args.getOption("refresh", "60"));
+    mode.width = width;
+    mode.height = height;
+    mode.refreshNumerator = refresh;
     mode.refreshDenominator = 1;
     
     Status status = SetMode(index, mode);
@@ -290,12 +349,19 @@ void cmdSetMode(const ArgumentParser& args) {
 void cmdSetLocation(const ArgumentParser& args) {
     std::cout << "Setting display location..." << std::endl;
     
-    uint32_t index = std::stoi(args.getOption("index", "0"));
+    uint32_t index, width, height;
+    int32_t x, y;
+    if (!safeParseUInt(args.getOption("index", "0"), "index", index)) return;
+    if (!safeParseInt(args.getOption("x", "0"), "x", x)) return;
+    if (!safeParseInt(args.getOption("y", "0"), "y", y)) return;
+    if (!safeParseUInt(args.getOption("width", "1920"), "width", width)) return;
+    if (!safeParseUInt(args.getOption("height", "1080"), "height", height)) return;
+    
     DisplayRect rect;
-    rect.x = std::stoi(args.getOption("x", "0"));
-    rect.y = std::stoi(args.getOption("y", "0"));
-    rect.width = std::stoi(args.getOption("width", "1920"));
-    rect.height = std::stoi(args.getOption("height", "1080"));
+    rect.x = x;
+    rect.y = y;
+    rect.width = width;
+    rect.height = height;
     
     Status status = SetLocation(index, rect);
     if (status == Status::Ok) {
@@ -316,12 +382,13 @@ void cmdSetPrimary(const ArgumentParser& args) {
     std::cout << "Setting primary display..." << std::endl;
     std::cout << "========================================" << std::endl;
     
-    // Check for flags
-    bool force = args.hasFlag("--force-primary");
-    bool yes = args.hasFlag("--yes") || args.hasFlag("-y");
-    bool dryRun = args.hasFlag("--dry-run");
+    // Check for flags (ArgumentParser strips leading -- from keys)
+    bool force = args.hasFlag("force-primary");
+    bool yes = args.hasFlag("yes") || args.hasFlag("y");
+    bool dryRun = args.hasFlag("dry-run");
     
-    uint32_t index = std::stoi(args.getOption("index", "0"));
+    uint32_t index;
+    if (!safeParseUInt(args.getOption("index", "0"), "index", index)) return;
     
     // ============================================================================
     // P0: Force flag required
@@ -535,8 +602,17 @@ void cmdInstall(const ArgumentParser& args) {
     std::string infPath = args.positional.size() > 1 ? args.positional[1] : "IddSampleDriver.inf";
     std::cout << "INF Path (raw): " << infPath << std::endl;
     
-    // Convert to wstring
-    std::wstring winfPath(infPath.begin(), infPath.end());
+    // Convert to wstring (proper UTF-8 to UTF-16 conversion for non-ASCII paths)
+    int wideSize = MultiByteToWideChar(CP_UTF8, 0, infPath.c_str(), -1, nullptr, 0);
+    if (wideSize <= 0) {
+        std::cout << "ERROR: Invalid path encoding" << std::endl;
+        std::cout << "Path may contain invalid characters or encoding issues" << std::endl;
+        return;
+    }
+    
+    std::wstring winfPath(wideSize, 0);
+    MultiByteToWideChar(CP_UTF8, 0, infPath.c_str(), -1, &winfPath[0], wideSize);
+    winfPath.resize(wideSize - 1); // Remove null terminator
     std::wcout << L"INF Path (wide): " << winfPath << std::endl;
     
     // Get absolute path
@@ -592,6 +668,58 @@ void cmdUninstall(const ArgumentParser& args) {
     if (!hasAdmin) {
         std::cout << "Note: Some operations may fail without admin privileges" << std::endl;
     }
+    std::cout << "----------------------------------------" << std::endl;
+    
+    // Safety check: Detect physical displays
+    std::cout << "Checking for physical displays..." << std::endl;
+    
+    // Enumerate adapters to check for physical displays
+    std::vector<AdapterInfo> adapters;
+    Status enumStatus = EnumerateAdapters(adapters);
+    
+    bool hasPhysicalDisplay = false;
+    int physicalCount = 0;
+    int virtualCount = 0;
+    
+    if (enumStatus == Status::Ok) {
+        for (const auto& adapter : adapters) {
+            if (adapter.isActive) {
+                if (adapter.isVirtual) {
+                    virtualCount++;
+                } else {
+                    hasPhysicalDisplay = true;
+                    physicalCount++;
+                }
+            }
+        }
+        
+        std::cout << "Physical displays: " << physicalCount << std::endl;
+        std::cout << "Virtual displays: " << virtualCount << std::endl;
+    } else {
+        std::cout << "WARNING: Could not enumerate displays" << std::endl;
+    }
+    
+    // If no physical display, require confirmation
+    if (!hasPhysicalDisplay) {
+        std::cout << "========================================" << std::endl;
+        std::cout << "⚠️  WARNING: No physical display detected!" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "Uninstalling the virtual display driver without a physical display" << std::endl;
+        std::cout << "may leave your system without any active displays!" << std::endl;
+        std::cout << std::endl;
+        
+        bool yes = args.hasFlag("yes") || args.hasFlag("y");
+        if (!yes) {
+            std::cout << "Use --yes flag to confirm this risky operation." << std::endl;
+            std::cout << "Or connect a physical display before uninstalling." << std::endl;
+            std::cout << "========================================" << std::endl;
+            std::cout << "Uninstall cancelled for safety." << std::endl;
+            return;
+        } else {
+            std::cout << "WARNING: Proceeding anyway due to --yes flag" << std::endl;
+        }
+    }
+    
     std::cout << "----------------------------------------" << std::endl;
     
     // Note: User must call 'vddctl init' before uninstall (design doc requirement)
