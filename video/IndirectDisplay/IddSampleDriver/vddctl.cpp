@@ -382,7 +382,7 @@ void cmdSetPrimary(const ArgumentParser& args) {
     std::cout << "Setting primary display..." << std::endl;
     std::cout << "========================================" << std::endl;
     
-    // Check for flags (ArgumentParser strips leading -- from keys)
+    // Check for flags (ArgumentParser stores keys without -- prefix)
     bool force = args.hasFlag("force-primary");
     bool yes = args.hasFlag("yes") || args.hasFlag("y");
     bool dryRun = args.hasFlag("dry-run");
@@ -602,17 +602,15 @@ void cmdInstall(const ArgumentParser& args) {
     std::string infPath = args.positional.size() > 1 ? args.positional[1] : "IddSampleDriver.inf";
     std::cout << "INF Path (raw): " << infPath << std::endl;
     
-    // Convert to wstring (proper UTF-8 to UTF-16 conversion for non-ASCII paths)
-    int wideSize = MultiByteToWideChar(CP_UTF8, 0, infPath.c_str(), -1, nullptr, 0);
-    if (wideSize <= 0) {
-        std::cout << "ERROR: Invalid path encoding" << std::endl;
-        std::cout << "Path may contain invalid characters or encoding issues" << std::endl;
+    // Convert to wstring (UTF-8 to UTF-16 conversion for non-ASCII paths)
+    int size = MultiByteToWideChar(CP_UTF8, 0, infPath.c_str(), -1, nullptr, 0);
+    if (size <= 0) {
+        std::cout << "ERROR: Failed to convert INF path encoding" << std::endl;
         return;
     }
-    
-    std::wstring winfPath(wideSize, 0);
-    MultiByteToWideChar(CP_UTF8, 0, infPath.c_str(), -1, &winfPath[0], wideSize);
-    winfPath.resize(wideSize - 1); // Remove null terminator
+    std::wstring winfPath(size, 0);
+    MultiByteToWideChar(CP_UTF8, 0, infPath.c_str(), -1, &winfPath[0], size);
+    winfPath.resize(size - 1);  // Remove null terminator
     std::wcout << L"INF Path (wide): " << winfPath << std::endl;
     
     // Get absolute path
