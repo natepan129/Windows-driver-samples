@@ -15,6 +15,7 @@ Environment:
 
 #include "vddsdk.h"
 #include <windows.h>
+#include <winuser.h>
 #include <wtsapi32.h>
 #include <setupapi.h>
 #include <devguid.h>
@@ -37,6 +38,13 @@ Environment:
 #include <thread>
 #include <sstream>
 #include <iomanip>
+
+// Define DISPLAYCONFIG_PATH_MIRROR_VIEW if not available in SDK
+// Note: Correct value is 0x00000002 per Windows SDK documentation
+// (0x00000008 is DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE, not MIRROR_VIEW)
+#ifndef DISPLAYCONFIG_PATH_MIRROR_VIEW
+#define DISPLAYCONFIG_PATH_MIRROR_VIEW 0x00000002
+#endif
 
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "cfgmgr32.lib")
