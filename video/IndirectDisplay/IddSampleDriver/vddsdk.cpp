@@ -447,9 +447,9 @@ namespace vdd {
     Status GetMode(uint32_t outputIndex, DisplayMode& mode) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Control operation - require explicit initialization
-        VddSdkImpl* impl = GetInstanceStrict_Locked();
-        if (!impl) return Status::NotInstalled;
+        // Query operation - auto-create instance for convenience (like EnumerateAdapters)
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        if (!impl) return Status::DriverError;
         
         return impl->GetMode(outputIndex, mode);
     }
@@ -457,9 +457,9 @@ namespace vdd {
     Status GetLocation(uint32_t outputIndex, DisplayRect& rect) {
         std::lock_guard<std::mutex> lock(g_instanceMutex);
         
-        // Control operation - require explicit initialization
-        VddSdkImpl* impl = GetInstanceStrict_Locked();
-        if (!impl) return Status::NotInstalled;
+        // Query operation - auto-create instance for convenience (like EnumerateAdapters)
+        VddSdkImpl* impl = GetOrCreateInstance_Locked();
+        if (!impl) return Status::DriverError;
         
         return impl->GetLocation(outputIndex, rect);
     }

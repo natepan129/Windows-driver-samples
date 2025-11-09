@@ -21,6 +21,7 @@ Environment:
 #include <algorithm>
 #include <io.h>
 #include <Windows.h>
+#include <shellapi.h>
 
 using namespace vdd;
 
@@ -30,22 +31,41 @@ public:
     std::map<std::string, std::string> options;
     std::vector<std::string> positional;
     
-    void parse(int argc, char* argv[]) {
+    // Parse from wide-char arguments (UTF-16) for proper non-ASCII path handling
+    void parse(int argc, wchar_t* argv[]) {
         for (int i = 1; i < argc; i++) {
-            std::string arg = argv[i];
+            std::wstring warg = argv[i];
+            // Convert to UTF-8 for internal storage
+            int size = WideCharToMultiByte(CP_UTF8, 0, warg.c_str(), -1, nullptr, 0, nullptr, nullptr);
+            if (size <= 0) continue;
+            std::string arg(size - 1, 0);
+            WideCharToMultiByte(CP_UTF8, 0, warg.c_str(), -1, &arg[0], size, nullptr, nullptr);
+            
             if (arg.substr(0, 2) == "--") {
                 // Long option
                 std::string key = arg.substr(2);
-                if (i + 1 < argc && argv[i + 1][0] != '-') {
-                    options[key] = argv[++i];
+                if (i + 1 < argc && argv[i + 1][0] != L'-') {
+                    std::wstring wval = argv[++i];
+                    int valSize = WideCharToMultiByte(CP_UTF8, 0, wval.c_str(), -1, nullptr, 0, nullptr, nullptr);
+                    if (valSize > 0) {
+                        std::string val(valSize - 1, 0);
+                        WideCharToMultiByte(CP_UTF8, 0, wval.c_str(), -1, &val[0], valSize, nullptr, nullptr);
+                        options[key] = val;
+                    }
                 } else {
                     options[key] = "true";
                 }
             } else if (arg.substr(0, 1) == "-") {
                 // Short option
                 std::string key = arg.substr(1);
-                if (i + 1 < argc && argv[i + 1][0] != '-') {
-                    options[key] = argv[++i];
+                if (i + 1 < argc && argv[i + 1][0] != L'-') {
+                    std::wstring wval = argv[++i];
+                    int valSize = WideCharToMultiByte(CP_UTF8, 0, wval.c_str(), -1, nullptr, 0, nullptr, nullptr);
+                    if (valSize > 0) {
+                        std::string val(valSize - 1, 0);
+                        WideCharToMultiByte(CP_UTF8, 0, wval.c_str(), -1, &val[0], valSize, nullptr, nullptr);
+                        options[key] = val;
+                    }
                 } else {
                     options[key] = "true";
                 }
@@ -402,7 +422,7 @@ void cmdSetPrimary(const ArgumentParser& args) {
         std::cout << "  • May cause black screen on reboot" << std::endl;
         std::cout << "  • May lock you out of the system" << std::endl;
         std::cout << std::endl;
-        std::cout << "Usage: vddctl setprimary <index> --force-primary [--yes] [--dry-run]" << std::endl;
+        std::cout << "Usage: vddctl setprimary --index <index> --force-primary [--yes] [--dry-run]" << std::endl;
         std::cout << std::endl;
         std::cout << "Options:" << std::endl;
         std::cout << "  --force-primary  Override safety check (required)" << std::endl;
@@ -737,13 +757,18 @@ void cmdUninstall(const ArgumentParser& args) {
 
 // Main function
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
+    // Use wide-char command line for proper non-ASCII path handling
+    int wargc = 0;
+    wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+    if (!wargv || wargc < 2) {
+        if (wargv) LocalFree(wargv);
         printHelp();
         return 1;
     }
     
     ArgumentParser args;
-    args.parse(argc, argv);
+    args.parse(wargc, wargv);
+    LocalFree(wargv);
     
     std::string command = args.positional.empty() ? "" : args.positional[0];
     
