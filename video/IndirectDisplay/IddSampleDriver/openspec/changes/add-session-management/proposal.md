@@ -1,5 +1,32 @@
 # Change: Add Fault-Tolerant Session Management
 
+---
+
+## ⚠️ Applicable Scenarios
+
+**This proposal is designed for long-running services and applications**, such as:
+- Game streaming services (Parsec, Moonlight, Sunshine)
+- Remote desktop services requiring continuous virtual display sessions
+- Background services that need persistent virtual display ownership
+- Applications requiring automatic recovery from crashes
+
+### NOT Required for vddctl CLI
+
+**The vddctl command-line tool does NOT need these features** because:
+- ✅ vddctl executes as short-lived processes (immediate return)
+- ✅ Each command is independent and does not hold resources
+- ✅ No need for heartbeat or lease management
+- ✅ Direct driver operations without intermediate layers
+- ✅ Manual cleanup via `vddctl deactivate` or `vddctl uninstall` is sufficient
+
+**Implementation Priority**:
+- For CLI usage scenarios: ❌ **NOT NEEDED** (100% functional without Session Management)
+- For service/application scenarios: ✅ **Implement as needed**
+
+**Current Status**: Proposal approved, but NOT implemented (CLI scenarios fully functional without it)
+
+---
+
 ## Why
 
 Applications using virtual displays can crash or terminate unexpectedly, leaving orphaned virtual displays active. This causes:
