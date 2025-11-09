@@ -66,18 +66,65 @@ The system SHALL provide a function to position a virtual display in desktop coo
 
 The system SHALL provide a function to designate a virtual display as the primary display.
 
-#### Scenario: Set virtual display as primary
-- **WHEN** `SetPrimary()` is called on a virtual display
-- **THEN** the virtual display becomes the primary in Windows display topology
-- **AND** the taskbar and desktop icons move to the virtual display
-- **AND** new windows open on the virtual display by default
-- **AND** the previous primary becomes a secondary display
+**Safety Requirements**:
+- Setting a virtual display as primary requires explicit `force=true` parameter to acknowledge risks
+- Operation is **blocked** in remote/VM sessions (RDP, VirtualBox, VMware, Hyper-V) to prevent lockout
+- At least one physical display must be active and visible
+- Desktop must be unlocked (not in lock screen state)
+- Current display topology is automatically backed up before changes
+- Automatic rollback is performed if the operation fails
+
+#### Scenario: Set virtual display as primary (with safety checks)
+- **WHEN** `SetPrimary(outputIndex, force=true)` is called on a virtual display
+- **AND** `force` parameter is `true` (required for virtual displays)
+- **AND** system is not in remote/VM session
+- **AND** at least one physical display is active and visible
+- **AND** desktop is not locked
+- **THEN** the system performs safety checks:
+  - Verifies administrator privileges
+  - Checks driver installation status
+  - Validates target display is active and not mirrored
+  - Backs up current topology configuration
+- **AND** if all checks pass:
+  - The virtual display becomes the primary in Windows display topology
+  - The taskbar and desktop icons move to the virtual display
+  - New windows open on the virtual display by default
+  - The previous primary becomes a secondary display
+  - Returns `Status::Ok`
+- **AND** if any check fails:
+  - Operation is aborted
+  - Returns appropriate error status (`Status::OperationNotPermitted`, `Status::InvalidState`, etc.)
+  - Provides detailed error message via `GetLastError()`
+  - Includes recovery instructions (e.g., `displaySwitch.exe /internal`, `vddctl deactivate`)
+
+#### Scenario: SetPrimary rejected without force flag
+- **WHEN** `SetPrimary(outputIndex, force=false)` is called on a virtual display
+- **THEN** the function immediately returns `Status::InvalidState`
+- **AND** provides error message explaining that `force=true` is required
+- **AND** no system state is modified
+
+#### Scenario: SetPrimary blocked in remote/VM session
+- **WHEN** `SetPrimary(outputIndex, force=true)` is called in a remote/VM session
+- **THEN** the function detects the remote/VM environment (RDP, VirtualBox, etc.)
+- **AND** immediately returns `Status::OperationNotPermitted`
+- **AND** provides error message explaining the restriction
+- **AND** no system state is modified (hard blocking, cannot be overridden)
+
+#### Scenario: SetPrimary with topology backup and rollback
+- **WHEN** `SetPrimary(outputIndex, force=true)` is called
+- **THEN** the system backs up current topology via `QueryDisplayConfig(QDC_DATABASE_CURRENT)`
+- **AND** attempts to set the virtual display as primary
+- **AND** if the operation fails:
+  - Automatically restores the backed-up topology
+  - Returns `Status::DriverError` with detailed error information
+  - Provides recovery instructions
 
 #### Scenario: Set primary on a physical display after using VDD
-- **WHEN** `SetPrimary()` is called on a physical display (index != VDD)
+- **WHEN** `SetPrimary(outputIndex, force=false)` is called on a physical display (index != VDD)
 - **THEN** the SDK correctly identifies the physical display device name
 - **AND** updates the display path priority to make it primary
 - **AND** the virtual display becomes secondary
+- **AND** `force` parameter is optional for physical displays (default `false` is acceptable)
 
 #### Scenario: Restore original primary after deactivation
 - **WHEN** `Deactivate()` is called after VDD was set as primary
@@ -100,6 +147,12 @@ The system SHALL provide a function to retrieve the current display mode of a vi
 - **THEN** the function returns `Status::NotActive`
 - **AND** provides guidance via `GetLastError()`
 
+#### Scenario: Query mode without explicit initialization
+- **WHEN** `GetMode()` is called without prior `Initialize()` call
+- **THEN** the function automatically creates SDK instance (auto-initialization)
+- **AND** proceeds with the query operation
+- **AND** behaves consistently with `EnumerateAdapters()` for convenience
+
 ---
 
 ### Requirement: Display Location Query
@@ -110,6 +163,12 @@ The system SHALL provide a function to retrieve the current desktop position of 
 - **WHEN** `GetLocation()` is called on an active virtual display
 - **THEN** the function returns the current desktop coordinates (x, y, width, height)
 - **AND** the coordinates are in virtual desktop space (pixels)
+
+#### Scenario: Query location without explicit initialization
+- **WHEN** `GetLocation()` is called without prior `Initialize()` call
+- **THEN** the function automatically creates SDK instance (auto-initialization)
+- **AND** proceeds with the query operation
+- **AND** behaves consistently with `EnumerateAdapters()` for convenience
 
 ---
 
@@ -158,7 +217,7 @@ All configuration functions use `SetDisplayConfig` with these flags:
 
 ### Auto-Initialization
 
-Configuration functions (`SetMode`, `SetLocation`, `SetPrimary`) automatically create the SDK instance if not initialized:
+Configuration and query functions (`SetMode`, `SetLocation`, `SetPrimary`, `GetMode`, `GetLocation`) automatically create the SDK instance if not initialized:
 
 ```cpp
 Status SetMode(uint32_t outputIndex, const DisplayMode& mode) {
@@ -166,9 +225,15 @@ Status SetMode(uint32_t outputIndex, const DisplayMode& mode) {
     VddSdkImpl* impl = GetOrCreateInstance_Locked();  // Auto-create
     return impl->SetMode(outputIndex, mode);
 }
+
+Status GetMode(uint32_t outputIndex, DisplayMode& mode) {
+    std::lock_guard<std::mutex> lock(g_instanceMutex);
+    VddSdkImpl* impl = GetOrCreateInstance_Locked();  // Auto-create
+    return impl->GetMode(outputIndex, mode);
+}
 ```
 
-This allows standalone usage without explicit `Initialize()` calls.
+This allows standalone usage without explicit `Initialize()` calls. Query functions (`GetMode`, `GetLocation`) behave consistently with `EnumerateAdapters()` for convenience.
 
 ---
 
@@ -217,12 +282,19 @@ SetLocation(0, { .x = 3840, .y = 0, .width = 1920, .height = 1080 });
 SetMode(0, { .width = 2560, .height = 1440, .refreshNumerator = 90, .refreshDenominator = 1 });
 ```
 
-### Example 2: Make VDD the primary display
+### Example 2: Make VDD the primary display (with safety)
 
 ```cpp
 Activate({ .name = "VDD Primary", .preferredMode = {1920,1080,60,1} });
-SetPrimary(0);  // VDD becomes primary
-// Launch app → it renders on VDD by default
+// WARNING: Requires force=true and passes safety checks
+Status result = SetPrimary(0, true);  // force=true required
+if (result == Status::Ok) {
+    // VDD becomes primary
+    // Launch app → it renders on VDD by default
+} else {
+    // Check GetLastError() for detailed error and recovery instructions
+    printf("Failed to set primary: %s\n", GetLastError().c_str());
+}
 ```
 
 ### Example 3: Query and restore configuration
@@ -246,11 +318,21 @@ SetLocation(0, originalRect);
 
 ## Change History
 
+- **v1.0.2** (2025-11-06): Extended auto-initialization to query functions
+  - GetMode and GetLocation now support auto-initialization (consistent with EnumerateAdapters)
+  - Allows `vddctl list` to work without prior `vddctl init` call
+  - Improves API consistency between query operations
+- **v1.0.1** (2025-11-06): Added safety requirements for SetPrimary
+  - SetPrimary now requires `force=true` parameter for virtual displays
+  - Added hard blocking in remote/VM sessions
+  - Added physical display presence validation
+  - Added topology backup and automatic rollback
+  - Added detailed error messages with recovery instructions
 - **v1.0.0** (2025-11-06): Initial specification based on design document
   - SetMode with dual-strategy (SetDisplayConfig + ChangeDisplaySettingsExW fallback)
   - SetLocation for desktop positioning
   - SetPrimary for primary display designation
   - GetMode and GetLocation query functions
   - Virtual display identification helper (GetVirtualDisplayDeviceNames)
-  - Auto-initialization support
+  - Auto-initialization support for configuration functions
 

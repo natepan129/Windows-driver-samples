@@ -128,10 +128,16 @@ Detailed specs: [`openspec/specs/`](openspec/specs/)
 **SHALL provide**:
 - ✅ Display mode setting (resolution, refresh rate)
 - ✅ Display positioning (X, Y coordinates)
-- ✅ Primary display designation
-- ✅ Topology preservation
+- ✅ Primary display designation (with safety requirements: `force=true` required, blocked in remote/VM)
+- ✅ Topology preservation and automatic rollback
 
 **Implementation**: `vddsdk.cpp` lines 1490-1874
+
+**Safety Features**:
+- `SetPrimary()` requires `force=true` parameter for virtual displays
+- Hard blocking in remote/VM sessions (RDP, VirtualBox, etc.)
+- Physical display presence validation
+- Automatic topology backup and rollback on failure
 
 ---
 
@@ -149,10 +155,14 @@ Detailed specs: [`openspec/specs/`](openspec/specs/)
 
 ### 5. Recovery ([spec](openspec/specs/vdd-recovery/spec.md))
 
-**SHALL provide**:
-- ✅ Orphaned state detection and cleanup
-- ✅ Driver health monitoring
-- ✅ Automatic recovery workflows
+**SHALL provide** (Planned for v1.1):
+- ⏳ Orphaned state detection and cleanup (`RecoverOrphanedState()` - stub, returns `NotImplemented`)
+- ⏳ Driver health monitoring (`EnsureDriverRunning()` - stub, returns `NotImplemented`)
+- ⏳ Automatic recovery workflows
+
+**Current Status**: Specification complete, implementation pending for v1.1
+
+**Workaround**: Use `Deactivate()` for manual cleanup, or `emergency_recovery.bat` for recovery scenarios.
 
 **Implementation**: Planned for v1.1
 

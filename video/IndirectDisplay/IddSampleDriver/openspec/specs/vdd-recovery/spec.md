@@ -6,6 +6,17 @@ This capability provides automatic recovery mechanisms to clean up orphaned virt
 
 ---
 
+## Implementation Status
+
+**Current Version**: v1.0.0 (Planned for v1.1)  
+**Status**: Specification complete, implementation pending
+
+The functions defined in this specification (`RecoverOrphanedState()`, `EnsureDriverRunning()`) are currently stubs that return `Status::NotImplemented`. They are planned for implementation in v1.1 release.
+
+**Workaround**: Applications can manually call `Deactivate()` to clean up virtual displays, and use Windows Device Manager or `emergency_recovery.bat` for recovery scenarios.
+
+---
+
 ## Requirements
 
 ### Requirement: Orphaned State Recovery
@@ -338,6 +349,9 @@ Recovery operations should log:
 
 ## Change History
 
+- **v1.0.1** (2025-11-06): Added implementation status note
+  - Marked functions as "Planned for v1.1"
+  - Added workaround information for current version
 - **v1.0.0** (2025-11-06): Initial specification based on design document
   - RecoverOrphanedState for crash cleanup
   - EnsureDriverRunning for driver health verification
