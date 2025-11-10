@@ -131,10 +131,10 @@ echo   1. 是，繼續測試（僅在有兩個或以上物理螢幕時推薦）
 echo   2. 跳過此場景（推薦，如果只有一個物理螢幕）
 echo.
 set /p SCENARIO3_CHOICE="請選擇 (1/2，默認跳過): "
-if "%SCENARIO3_CHOICE%"=="1" (
+if "!SCENARIO3_CHOICE!"=="1" (
     echo [INFO] 激活虛擬顯示 (1920x1080@90Hz)...
     "%VDDCTL_PATH%" activate --name "VDD Primary" --width 1920 --height 1080 --refresh 90
-    if %errorLevel% equ 0 (
+    if !errorLevel! equ 0 (
         echo [SUCCESS] 場景 3 激活成功
         timeout /t 2 /nobreak >nul
         echo [WARNING] ⚠️  即將設置 VDD 為主顯示器！

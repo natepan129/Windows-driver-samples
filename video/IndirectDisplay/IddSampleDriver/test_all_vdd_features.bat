@@ -258,10 +258,10 @@ echo   1. 是，繼續測試（僅在有兩個或以上物理螢幕時推薦）
 echo   2. 跳過此測試（推薦，如果只有一個物理螢幕）
 echo.
 set /p SETPRIMARY_CHOICE="請選擇 (1/2，默認跳過): "
-if "%SETPRIMARY_CHOICE%"=="1" (
+if "!SETPRIMARY_CHOICE!"=="1" (
     echo [INFO] 執行 setprimary 命令...
     "%VDDCTL_PATH%" setprimary --index 0
-    if %errorLevel% equ 0 (
+    if !errorLevel! equ 0 (
         echo [PASS] setprimary 命令執行成功
         set /a TEST_PASSED+=1
         echo [INFO] 等待 1 秒讓主顯示器切換...
