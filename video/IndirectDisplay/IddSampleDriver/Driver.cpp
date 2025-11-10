@@ -617,11 +617,21 @@ void IndirectDeviceContext::FinishInit(UINT ConnectorIndex)
         { 0xB5F1A7C3, 0x8D2E, 0x4F6A, { 0x9C, 0x1B, 0x3E, 0x7D, 0x4A, 0x5F, 0x8C, 0x92 } };
 
     // Generate stable ContainerId: Hash(NamespaceGUID + ConnectorIndex)
-    // Simple deterministic approach: XOR namespace GUID with ConnectorIndex pattern
+    // FIXED: Also modify Data4 array to ensure uniqueness and proper GUID format
     GUID StableContainerId = IDD_SAMPLE_NAMESPACE_GUID;
     StableContainerId.Data1 ^= (ConnectorIndex * 0x12345678);  // Mix ConnectorIndex into GUID
     StableContainerId.Data2 ^= (WORD)(ConnectorIndex * 0xABCD);
     StableContainerId.Data3 ^= (WORD)(ConnectorIndex * 0xEF01);
+    
+    // CRITICAL FIX: Also modify Data4 array to ensure each monitor has unique ContainerId
+    // This prevents all monitors from having identical Data4, which can cause Windows to fail recognizing them
+    for (int i = 0; i < 8; i++) {
+        StableContainerId.Data4[i] ^= (BYTE)((ConnectorIndex * 0x11) + (i * 0x17));
+    }
+    
+    // Note: ContainerId doesn't need to conform to UUID v4 specification
+    // The deterministic generation based on namespace GUID + ConnectorIndex is sufficient
+    // for Windows to recognize and persist monitor configurations across reboots
     
     MonitorInfo.MonitorContainerId = StableContainerId;
     

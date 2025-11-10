@@ -2623,7 +2623,10 @@ namespace vdd {
             
             adapter.isActive = (displayDevice.StateFlags & DISPLAY_DEVICE_ACTIVE) != 0;
             adapter.isPrimary = (displayDevice.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) != 0;
-            adapter.isVirtual = (displayDevice.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER) != 0;
+            
+            // Check if this is IddSampleDriver adapter (by DeviceString)
+            bool isIddAdapter = (deviceString.find(L"IddSampleDriver") != std::wstring::npos);
+            adapter.isVirtual = isIddAdapter;
             
             // Get adapter ID
             adapter.adapterId = static_cast<uint32_t>(adapters.size());
