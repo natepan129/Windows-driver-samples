@@ -30,9 +30,9 @@
 **前提**: 您需要提前打開命令行窗口，或者通過遠程桌面連接。
 
 ```batch
-# 找到 vddctl.exe 的路徑（通常在）
-cd C:\Users\nate\repos\vdd\Windows-driver-samples\video\IndirectDisplay
-IddSampleDriver\build\bin\Release\vddctl.exe deactivate
+# 從 IddSampleDriver 文件夾執行
+cd IddSampleDriver
+build\bin\Release\vddctl.exe deactivate
 ```
 
 **或者使用完整路徑**:

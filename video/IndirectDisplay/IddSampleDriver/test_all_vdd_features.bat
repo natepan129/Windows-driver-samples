@@ -30,7 +30,7 @@ echo.
 REM 檢查 vddctl.exe 是否存在
 if not exist "%VDDCTL_PATH%" (
     echo [ERROR] vddctl.exe 不存在: %VDDCTL_PATH%
-    echo 請先執行 build_both_msbuild.bat 建置專案
+    echo 請先執行 ..\build_both_msbuild.bat 建置專案
     pause
     exit /b 1
 )
@@ -38,7 +38,7 @@ if not exist "%VDDCTL_PATH%" (
 REM 檢查 INF 文件是否存在
 if not exist "%INF_PATH%" (
     echo [ERROR] INF 文件不存在: %INF_PATH%
-    echo 請先執行 build_both_msbuild.bat 建置專案
+    echo 請先執行 ..\build_both_msbuild.bat 建置專案
     pause
     exit /b 1
 )

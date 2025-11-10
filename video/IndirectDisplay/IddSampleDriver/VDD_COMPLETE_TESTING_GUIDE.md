@@ -8,15 +8,15 @@
 
 ### 1. 建置專案
 ```batch
-# 建置 IddSampleDriver 和 vddctl
-build_both_msbuild.bat
+# 建置 IddSampleDriver 和 vddctl（從 IddSampleDriver 文件夾執行）
+..\build_both_msbuild.bat
 ```
 
 ### 2. 確認文件存在
-- `IddSampleDriver\build\bin\Release\vddctl.exe`
-- `IddSampleDriver\x64\Release\IddSampleDriver.dll`
-- `IddSampleDriver\x64\Release\IddSampleDriver.inf`
-- `IddSampleDriver\x64\Release\IddSampleDriver\iddsampledriver.cat`
+- `build\bin\Release\vddctl.exe`
+- `x64\Release\IddSampleDriver.dll`
+- `x64\Release\IddSampleDriver.inf`
+- `x64\Release\IddSampleDriver\iddsampledriver.cat`
 
 ### 3. 管理員權限
 部分測試（install/uninstall）需要管理員權限。請以管理員身份執行測試腳本。
@@ -25,8 +25,8 @@ build_both_msbuild.bat
 
 ### 快速測試（推薦）
 ```batch
-# 執行完整自動化測試
-test_all_vdd_features.bat
+# 執行完整自動化測試（從 IddSampleDriver 文件夾執行）
+.\test_all_vdd_features.bat
 ```
 
 此腳本會自動測試所有功能，包括：
@@ -42,13 +42,13 @@ test_all_vdd_features.bat
 
 #### 1.1 版本信息
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe version
+build\bin\Release\vddctl.exe version
 ```
 **預期結果**: 顯示 SDK 版本信息
 
 #### 1.2 幫助信息
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe help
+build\bin\Release\vddctl.exe help
 ```
 **預期結果**: 顯示所有可用命令和選項
 
@@ -56,19 +56,19 @@ IddSampleDriver\build\bin\Release\vddctl.exe help
 
 #### 2.1 初始化 SDK
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe init
+build\bin\Release\vddctl.exe init
 ```
 **預期結果**: SDK 初始化成功
 
 #### 2.2 檢查狀態
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe status
+build\bin\Release\vddctl.exe status
 ```
 **預期結果**: 顯示當前狀態（驅動安裝狀態、顯示激活狀態等）
 
 #### 2.3 關閉 SDK
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe shutdown
+build\bin\Release\vddctl.exe shutdown
 ```
 **預期結果**: SDK 關閉成功
 
@@ -76,7 +76,7 @@ IddSampleDriver\build\bin\Release\vddctl.exe shutdown
 
 #### 3.1 安裝驅動
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe install --path "IddSampleDriver\x64\Release\IddSampleDriver.inf"
+build\bin\Release\vddctl.exe install --path "x64\Release\IddSampleDriver.inf"
 ```
 **預期結果**: 
 - 驅動安裝成功
@@ -92,13 +92,13 @@ devmgmt.msc
 
 #### 3.2 檢查安裝狀態
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe status
+build\bin\Release\vddctl.exe status
 ```
 **預期結果**: 顯示 "Driver Installed: Yes"
 
 #### 3.3 卸載驅動（可選）
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe uninstall
+build\bin\Release\vddctl.exe uninstall
 ```
 **預期結果**: 驅動卸載成功，虛擬監視器從 Device Manager 消失
 
@@ -106,7 +106,7 @@ IddSampleDriver\build\bin\Release\vddctl.exe uninstall
 
 #### 4.1 激活虛擬顯示
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe activate --name "VDD Test" --width 1920 --height 1080 --refresh 60
+build\bin\Release\vddctl.exe activate --name "VDD Test" --width 1920 --height 1080 --refresh 60
 ```
 **預期結果**: 
 - 虛擬顯示激活成功
@@ -122,19 +122,19 @@ ms-settings:display
 
 #### 4.2 列出所有顯示器
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe list
+build\bin\Release\vddctl.exe list
 ```
 **預期結果**: 列出所有顯示適配器和輸出，包括 VDD 適配器
 
 #### 4.3 檢查激活狀態
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe status
+build\bin\Release\vddctl.exe status
 ```
 **預期結果**: 顯示 "Display Active: Yes"
 
 #### 4.4 停用虛擬顯示
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe deactivate
+build\bin\Release\vddctl.exe deactivate
 ```
 **預期結果**: 虛擬顯示停用，從 Windows 顯示設置中消失
 
@@ -143,29 +143,29 @@ IddSampleDriver\build\bin\Release\vddctl.exe deactivate
 #### 5.1 設置顯示模式
 ```batch
 # 設置為 2560x1440@75Hz
-IddSampleDriver\build\bin\Release\vddctl.exe setmode --index 0 --width 2560 --height 1440 --refresh 75
+build\bin\Release\vddctl.exe setmode --index 0 --width 2560 --height 1440 --refresh 75
 
 # 設置為 4K@60Hz
-IddSampleDriver\build\bin\Release\vddctl.exe setmode --index 0 --width 3840 --height 2160 --refresh 60
+build\bin\Release\vddctl.exe setmode --index 0 --width 3840 --height 2160 --refresh 60
 
 # 設置為 1080p@144Hz（高刷新率）
-IddSampleDriver\build\bin\Release\vddctl.exe setmode --index 0 --width 1920 --height 1080 --refresh 144
+build\bin\Release\vddctl.exe setmode --index 0 --width 1920 --height 1080 --refresh 144
 ```
 **預期結果**: 顯示模式成功切換，可以在顯示設置中驗證
 
 #### 5.2 設置顯示位置
 ```batch
 # 設置為第二個屏幕位置（右側）
-IddSampleDriver\build\bin\Release\vddctl.exe setlocation --index 0 --x 1920 --y 0 --width 1920 --height 1080
+build\bin\Release\vddctl.exe setlocation --index 0 --x 1920 --y 0 --width 1920 --height 1080
 
 # 設置為第三個屏幕位置
-IddSampleDriver\build\bin\Release\vddctl.exe setlocation --index 0 --x 3840 --y 0 --width 1920 --height 1080
+build\bin\Release\vddctl.exe setlocation --index 0 --x 3840 --y 0 --width 1920 --height 1080
 ```
 **預期結果**: 顯示器位置更新，可以在顯示設置中拖動驗證
 
 #### 5.3 設置為主顯示器
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe setprimary --index 0
+build\bin\Release\vddctl.exe setprimary --index 0
 ```
 **⚠️ 重要警告**: 
 - **如果您的系統只有一個物理螢幕，將 VDD 設置為主顯示器會導致物理螢幕變黑！**
@@ -186,19 +186,19 @@ IddSampleDriver\build\bin\Release\vddctl.exe setprimary --index 0
 
 ```batch
 # 1. 初始化 SDK
-IddSampleDriver\build\bin\Release\vddctl.exe init
+build\bin\Release\vddctl.exe init
 
 # 2. 安裝驅動（如果尚未安裝）
-IddSampleDriver\build\bin\Release\vddctl.exe install --path "IddSampleDriver\x64\Release\IddSampleDriver.inf"
+build\bin\Release\vddctl.exe install --path "x64\Release\IddSampleDriver.inf"
 
 # 3. 激活高刷新率虛擬顯示
-IddSampleDriver\build\bin\Release\vddctl.exe activate --name "VDD Proxy" --width 1920 --height 1080 --refresh 120
+build\bin\Release\vddctl.exe activate --name "VDD Proxy" --width 1920 --height 1080 --refresh 120
 
 # 4. 設置顯示位置（擴展模式，在物理屏幕右側）
-IddSampleDriver\build\bin\Release\vddctl.exe setlocation --index 0 --x 1920 --y 0 --width 1920 --height 1080
+build\bin\Release\vddctl.exe setlocation --index 0 --x 1920 --y 0 --width 1920 --height 1080
 
 # 5. 檢查狀態
-IddSampleDriver\build\bin\Release\vddctl.exe status
+build\bin\Release\vddctl.exe status
 ```
 
 **驗證**: 
@@ -212,13 +212,13 @@ IddSampleDriver\build\bin\Release\vddctl.exe status
 
 ```batch
 # 1. 激活高解析度虛擬顯示
-IddSampleDriver\build\bin\Release\vddctl.exe activate --name "VDD Remote" --width 2560 --height 1440 --refresh 90
+build\bin\Release\vddctl.exe activate --name "VDD Remote" --width 2560 --height 1440 --refresh 90
 
 # 2. 設置為擴展模式（在物理屏幕右側）
-IddSampleDriver\build\bin\Release\vddctl.exe setlocation --index 0 --x 1920 --y 0 --width 2560 --height 1440
+build\bin\Release\vddctl.exe setlocation --index 0 --x 1920 --y 0 --width 2560 --height 1440
 
 # 3. 檢查狀態
-IddSampleDriver\build\bin\Release\vddctl.exe status
+build\bin\Release\vddctl.exe status
 ```
 
 **驗證**:
@@ -237,13 +237,13 @@ IddSampleDriver\build\bin\Release\vddctl.exe status
 
 ```batch
 # 1. 激活虛擬顯示
-IddSampleDriver\build\bin\Release\vddctl.exe activate --name "VDD Primary" --width 1920 --height 1080 --refresh 90
+build\bin\Release\vddctl.exe activate --name "VDD Primary" --width 1920 --height 1080 --refresh 90
 
 # 2. 設置為主顯示器（⚠️ 僅在有兩個或以上物理螢幕時使用）
-IddSampleDriver\build\bin\Release\vddctl.exe setprimary --index 0
+build\bin\Release\vddctl.exe setprimary --index 0
 
 # 3. 檢查狀態
-IddSampleDriver\build\bin\Release\vddctl.exe status
+build\bin\Release\vddctl.exe status
 ```
 
 **驗證**（僅在有兩個或以上物理螢幕時）:
@@ -275,7 +275,7 @@ devmgmt.msc
 # 在 Device Manager 中: Action -> Scan for hardware changes
 
 # 3. 檢查驅動狀態
-IddSampleDriver\build\bin\Release\vddctl.exe status
+build\bin\Release\vddctl.exe status
 ```
 
 ### 問題 2: Activate 後顯示器未出現
@@ -288,7 +288,7 @@ IddSampleDriver\build\bin\Release\vddctl.exe status
 **解決方法**:
 ```batch
 # 1. 檢查狀態
-IddSampleDriver\build\bin\Release\vddctl.exe status
+build\bin\Release\vddctl.exe status
 
 # 2. 檢查 Device Manager 中的設備狀態
 # 確保設備已啟用（無黃色感嘆號）
@@ -314,7 +314,7 @@ IddSampleDriver\build\bin\Release\vddctl.exe status
 #### 方法 2: 使用命令行停用 VDD（需要提前準備）
 如果您預先打開了命令行窗口（在另一個虛擬桌面或遠程連接）：
 ```batch
-IddSampleDriver\build\bin\Release\vddctl.exe deactivate
+build\bin\Release\vddctl.exe deactivate
 ```
 
 #### 方法 3: 使用遠程桌面連接
@@ -362,14 +362,14 @@ shutdown /r /t 0
 **解決方法**:
 ```batch
 # 1. 確認顯示器已激活
-IddSampleDriver\build\bin\Release\vddctl.exe status
+build\bin\Release\vddctl.exe status
 
 # 2. 檢查參數是否有效
-IddSampleDriver\build\bin\Release\vddctl.exe list
+build\bin\Release\vddctl.exe list
 
 # 3. 重新激活顯示器
-IddSampleDriver\build\bin\Release\vddctl.exe deactivate
-IddSampleDriver\build\bin\Release\vddctl.exe activate --name "Test" --width 1920 --height 1080 --refresh 60
+build\bin\Release\vddctl.exe deactivate
+build\bin\Release\vddctl.exe activate --name "Test" --width 1920 --height 1080 --refresh 60
 ```
 
 ## 📊 測試檢查清單

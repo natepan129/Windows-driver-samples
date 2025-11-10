@@ -17,7 +17,7 @@ echo.
 REM 檢查 vddctl.exe
 if not exist "%VDDCTL_PATH%" (
     echo [ERROR] vddctl.exe 不存在
-    echo 請先執行 build_both_msbuild.bat
+    echo 請先執行 ..\build_both_msbuild.bat
     pause
     exit /b 1
 )
